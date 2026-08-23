@@ -107,6 +107,7 @@ done
 
 ## 🔴 งานที่ยังค้าง (ยืนยันจากเครื่องอ้างอิง เมื่อ 2026-08-23)
 
+- [ ] **ตั้ง cron ตรวจ+ซ่อมอัตโนมัติ** — `scripts/install-autoheal.sh` ([05 §5.1b](docs/05-operations.md))
 - [ ] **ล็อก panel** — ยังเป็นพอร์ต `8888` ต้องเปลี่ยนพอร์ต + security entrance + password
 - [ ] **ตั้ง Backup + ทดสอบ restore** — ยังไม่มี backup เลยแม้แต่ชุดเดียว
 - [ ] SSH: ปิด password login (คีย์ใช้ได้แล้ว แต่ password ยังเปิดอยู่)
@@ -197,6 +198,8 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
+| [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
+| [`nightly-check.sh`](scripts/nightly-check.sh) | ตัวงานที่ cron เรียก — ไม่ต้องรันเอง | cron เรียกให้ |
 
 > `fix-permissions.sh` ส่งทาง stdin ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอตัวสคริปต์เองมาทาง stdin
 > คำถามจะอ่านค่าไม่ได้แล้วตอบ "ยกเลิก" ทันที ต้อง `scp` แล้วรันบนเครื่องเท่านั้น

@@ -25,6 +25,7 @@
 | 7 | FastCGI Cache (`apply-cache-config.sh`) | [04](04-cache.md) | 20 นาที |
 | 8 | SSH hardening + Fail2ban | [02 §2.3–2.4](02-hardening.md) | 15 นาที |
 | 9 | 🔴 **Backup + ทดสอบ restore** | [05 §5.3](05-operations.md) | 40 นาที |
+| 9b | ตั้ง cron ตรวจ+ซ่อมเองทุกคืน (`install-autoheal.sh`) | [05 §5.1b](05-operations.md) | 2 นาที |
 | 10 | เว็บแรก | [06](06-new-site.md) (WordPress) · [09](09-static-sites.md) (static) | 10 นาที |
 
 **ลำดับที่ห้ามสลับ:**
