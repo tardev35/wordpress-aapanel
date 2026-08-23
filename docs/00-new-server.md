@@ -49,11 +49,13 @@ scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
 > ถ้าดึง repo เวอร์ชันใหม่มาแล้วสั่งรันเลย จะเจอ `No such file or directory` สำหรับสคริปต์ที่
 > เพิ่งเพิ่มเข้ามา — **รัน `scp -r` ซ้ำทุกครั้งที่ repo เปลี่ยน**
 >
-> สคริปต์ส่วนใหญ่เลี่ยงปัญหานี้ได้ด้วยการส่งผ่าน stdin แทน ซึ่งได้เวอร์ชันล่าสุดเสมอ:
+> เลี่ยงได้ด้วยการส่งสคริปต์ผ่าน stdin แทน ซึ่งได้เวอร์ชันล่าสุดเสมอ **แต่บน PowerShell
+> ต้องผ่าน `cmd` เท่านั้น** เพราะ PowerShell ไม่รองรับ `<` และถ้าใช้ `Get-Content | ssh`
+> มันจะใส่ BOM ทำให้บรรทัด shebang พัง:
 > ```powershell
-> ssh root@SERVER_IP "bash -s" < scripts/set-redis-limit.sh
+> cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\set-redis-limit.sh"
 > ```
-> ดูตารางว่าตัวไหนใช้วิธีไหนได้ใน [README](../README.md#สคริปต์ใน-repo)
+> รายละเอียดและตารางว่าตัวไหนใช้วิธีไหนได้อยู่ใน [README](../README.md)
 
 ---
 

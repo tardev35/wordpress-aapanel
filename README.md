@@ -133,27 +133,56 @@
 
 ## สคริปต์ใน repo
 
-**มีสองวิธีรัน และเลือกผิดจะเจอ `No such file or directory`**
+### 🪟 วิธีรันบน PowerShell (ซึ่งคือที่ทีมนี้ใช้)
 
-| วิธี | ใช้กับ | ทำไม |
-|---|---|---|
-| `ssh root@IP "bash -s" < scripts/X.sh` | สคริปต์ที่อยู่ได้ด้วยตัวเอง | ส่งเนื้อสคริปต์ผ่าน stdin ไม่ต้องอัปไฟล์ **ได้เวอร์ชันล่าสุดเสมอ** |
-| `scp -r configs scripts ...` แล้วค่อย `ssh ... "bash /tmp/wpaa/scripts/X.sh"` | สคริปต์ที่ต้องอ่านไฟล์ใน `configs/` | มันเปิดไฟล์ข้าง ๆ ตัวเอง จึงต้องมีทั้งโฟลเดอร์อยู่บนเครื่อง |
+**วิธีหลัก — อัปแล้วรัน ใช้ได้กับทุกสคริปต์:**
+
+```powershell
+cd C:\wordpress-aapanel
+scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
+ssh root@SERVER_IP "bash /tmp/wpaa/scripts/ชื่อสคริปต์.sh"
+```
+
+**ถ้าไม่อยากอัป (ได้เวอร์ชันล่าสุดจาก repo เสมอ) ต้องผ่าน `cmd` เท่านั้น:**
+
+```powershell
+cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต์.sh"
+```
+
+> 🔴 **สองแบบที่ดูน่าจะได้แต่พังทั้งคู่บน PowerShell**
+>
+> ```powershell
+> ssh root@IP "bash -s" < scripts\X.sh
+> # The '<' operator is reserved for future use.   <- PowerShell ไม่รองรับ < เลย
+>
+> Get-Content scripts\X.sh -Raw | ssh root@IP "bash -s"
+> # bash: line 1: ﻿#!/usr/bin/env: No such file or directory
+> ```
+>
+> อันที่สองอันตรายกว่าเพราะ**ดูเหมือนทำงานได้** — สคริปต์รันต่อจนจบและ output ออกมาถูก
+> แต่ exit code เป็น 255 สาเหตุคือ **PowerShell 5.1 ใส่ BOM เข้าไปหน้าไฟล์ตอน pipe**
+> (ไฟล์ใน repo ไม่มี BOM — ตรวจแล้วขึ้นต้นด้วย `23 21 2f`) บรรทัด shebang เลยพัง
+> ตั้ง `$OutputEncoding` ก็ไม่ช่วย
+>
+> ถ้ารันจาก Git Bash / WSL ใช้ `ssh root@IP "bash -s" < scripts/X.sh` ได้ตามปกติ
+
+**สคริปต์ 2 ตัวนี้บังคับว่าต้อง `scp` ไม่มีทางเลือกอื่น** เพราะมันเปิดไฟล์ใน `configs/`
+ข้าง ๆ ตัวเอง: `harden-nginx.sh` และ `apply-cache-config.sh`
 
 | สคริปต์ | ทำอะไร | รันยังไง |
 |---|---|---|
-| [`inventory.sh`](scripts/inventory.sh) | เก็บค่าจริงทั้งเครื่อง **อ่านอย่างเดียว** | `bash -s` |
-| [`verify-config.sh`](scripts/verify-config.sh) | เช็คว่าค่าที่เอกสารอ้างยังอยู่ไหม | `bash -s` |
-| [`healthcheck.sh`](scripts/healthcheck.sh) | สถานะ service ตอนนี้ | `bash -s` |
-| [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache ทั้งหมด | `bash -s` |
-| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + reload · **ทุกครั้งหลัง Add site** | `bash -s` หรือ `/root/stamp-site.sh` |
-| [`set-redis-limit.sh`](scripts/set-redis-limit.sh) | `maxmemory` + `maxmemory-policy` พร้อม restart | `bash -s` |
-| [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | ต้อง `scp` ก่อน |
-| [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | ต้อง `scp` ก่อน |
-| [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | ต้อง `scp` ก่อน (มีคำถาม yes/no) |
+| [`inventory.sh`](scripts/inventory.sh) | เก็บค่าจริงทั้งเครื่อง **อ่านอย่างเดียว** | scp หรือ cmd /c |
+| [`verify-config.sh`](scripts/verify-config.sh) | เช็คว่าค่าที่เอกสารอ้างยังอยู่ไหม | scp หรือ cmd /c |
+| [`healthcheck.sh`](scripts/healthcheck.sh) | สถานะ service ตอนนี้ | scp หรือ cmd /c |
+| [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache ทั้งหมด | scp หรือ cmd /c |
+| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + reload · **ทุกครั้งหลัง Add site** | `/root/stamp-site.sh` (มีอยู่บนเครื่องแล้ว) |
+| [`set-redis-limit.sh`](scripts/set-redis-limit.sh) | `maxmemory` + `maxmemory-policy` พร้อม restart | scp หรือ cmd /c |
+| [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
+| [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |
+| [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
 
-> `fix-permissions.sh` ใช้ `bash -s` ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอส่งสคริปต์ทาง stdin
-> คำถามจะอ่านค่าไม่ได้และตอบ "ยกเลิก" ทันที
+> `fix-permissions.sh` ส่งทาง stdin ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอตัวสคริปต์เองมาทาง stdin
+> คำถามจะอ่านค่าไม่ได้แล้วตอบ "ยกเลิก" ทันที ต้อง `scp` แล้วรันบนเครื่องเท่านั้น
 
 > **ถ้าเพิ่งดึง repo เวอร์ชันใหม่มา ต้อง `scp -r configs scripts` ใหม่ก่อนใช้สองตัวล่าง**
 > ของที่อยู่ใน `/tmp/wpaa/` บนเครื่องคือ snapshot ของตอนที่อัปครั้งก่อน ไม่ได้อัปเดตตามเอง

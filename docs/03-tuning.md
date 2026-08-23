@@ -276,11 +276,14 @@ mysql -uroot -p -e "SHOW VARIABLES WHERE Variable_name IN \
 **วิธีที่แนะนำ — ใช้สคริปต์ ตั้งให้ครบทั้งคู่และ restart ให้:**
 
 ```powershell
-ssh root@SERVER_IP "bash -s" < scripts/set-redis-limit.sh
+cd C:\wordpress-aapanel
+scp scripts/set-redis-limit.sh root@SERVER_IP:/tmp/wpaa/scripts/
+ssh root@SERVER_IP "bash /tmp/wpaa/scripts/set-redis-limit.sh"
 ```
 
-> สคริปต์นี้ไม่ได้อ่านไฟล์ใน `configs/` จึงส่งผ่าน stdin ได้เลย **ไม่ต้อง `scp`**
-> และได้เวอร์ชันล่าสุดจาก repo เสมอ
+> สคริปต์นี้ไม่ได้อ่านไฟล์ใน `configs/` จึงจะส่งผ่าน stdin แทนก็ได้ **แต่บน PowerShell
+> ต้องผ่าน `cmd`**: `cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\set-redis-limit.sh"`
+> — `ssh ... < file` ตรง ๆ ใช้ไม่ได้ ดู [README](../README.md)
 
 **ถ้าอยากทำเอง:**
 
