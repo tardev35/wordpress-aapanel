@@ -304,5 +304,12 @@ define( 'AUTOMATIC_UPDATER_DISABLED', true );
 ### ไซต์ใหม่จะรั่วเอง — จึงต้องมี cron
 
 ไซต์ที่สร้างใหม่มาพร้อม auto-update เปิดเสมอ นโยบายนี้จึงรั่วทีละไซต์ทุกครั้งที่ทีมเพิ่มเว็บ
-[`nightly-check.sh`](../scripts/nightly-check.sh) จึงเรียก `set-wp-autoupdate.sh` ทุกคืน
-เพื่อไล่ปิดให้ไซต์ที่เพิ่งโผล่มา
+จึงปิดสองชั้น:
+
+1. **[`stamp-site.sh`](../scripts/stamp-site.sh)** ซึ่งต้องรันหลัง Add site อยู่แล้ว
+   ปิดให้**ทันที** — ปิดช่องว่างที่ไซต์สร้างตอนเช้าจะเปิด auto-update ค้างไว้ทั้งวัน
+   ซึ่งนานพอที่ cron ของ WordPress เองจะยิงอัป major ไปก่อน
+2. **[`nightly-check.sh`](../scripts/nightly-check.sh)** เรียก `set-wp-autoupdate.sh`
+   ทุกคืนเป็นตาข่ายรับกรณีที่คนลืม stamp
+
+ทั้งสองเรียกสคริปต์ตัวเดียวกัน ไม่ได้เขียนตรรกะซ้ำ และมัน idempotent จึงรันซ้อนกันได้

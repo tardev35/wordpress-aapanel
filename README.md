@@ -195,7 +195,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`verify-config.sh`](scripts/verify-config.sh) | เช็คว่าค่าที่เอกสารอ้างยังอยู่ไหม | scp หรือ cmd /c |
 | [`healthcheck.sh`](scripts/healthcheck.sh) | สถานะ service ตอนนี้ | scp หรือ cmd /c |
 | [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache ทั้งหมด | scp หรือ cmd /c |
-| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + reload · **ทุกครั้งหลัง Add site** | `/root/stamp-site.sh` (มีอยู่บนเครื่องแล้ว) |
+| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + ปิด auto-update + reload · **ทุกครั้งหลัง Add site** | `/root/stamp-site.sh` (มีอยู่บนเครื่องแล้ว) |
 | [`set-redis-limit.sh`](scripts/set-redis-limit.sh) | `maxmemory` + `maxmemory-policy` พร้อม restart | scp หรือ cmd /c |
 | [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |

@@ -28,12 +28,14 @@ Checklist สำหรับสร้างเว็บ WordPress ใหม่�
 ทั้งหมด ยกเว้นไซต์ที่เพิ่งสร้างล่าสุดซึ่งยังค้างที่ 6.5.10 เพราะ cron ของ WordPress
 ยังไม่ถึงรอบ — พอถึงรอบก็ตามขึ้นไป
 
-**เครื่องนี้เลือกปิด auto-update ทั้งหมด** (ดู [08 ADR-012](08-decisions.md))
-`nightly-check.sh` จะไล่ปิดให้ไซต์ใหม่ทุกคืน แต่ถ้าอยากปิดทันทีไม่ต้องรอ:
+**เครื่องนี้เลือกปิด auto-update ทั้งหมด** (ดู [08 ADR-012](08-decisions.md)) โดยมีสองชั้น:
 
-```powershell
-ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-autoupdate.sh"
-```
+| ชั้น | ปิดให้เมื่อไหร่ |
+|---|---|
+| `stamp-site.sh` (รันเองหลัง Add site) | **ทันที** |
+| `nightly-check.sh` (cron 23:00) | ตาข่ายรับกรณีที่คนลืม stamp |
+
+ปิดเองทันทีก็ได้ถ้าอยาก: `ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-autoupdate.sh"`
 
 ### 🔴 แล้วรัน `stamp-site.sh` ทันที — ข้ามไม่ได้
 
@@ -41,11 +43,15 @@ ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-autoupdate.sh"
 ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
 ```
 
-**สองอย่างที่มันทำ และทั้งสองอย่างจำเป็น:**
+**สามอย่างที่มันทำ และจำเป็นทั้งหมด:**
 
 1. ใส่กฎ **www → non-www** ที่ระดับ nginx ให้ไซต์ใหม่ (ไม่ต้องรอ WordPress ทำ ซึ่งไซต์ที่ยัง
    ไม่ได้ลง WP ก็ยังไม่มีคนทำให้)
-2. **`nginx -s reload`** — ข้อนี้สำคัญกว่าที่คิด
+2. **ปิด auto-update ของ WordPress ให้ไซต์นั้นทันที** — ไม่ต้องรอ cron รอบ 5 ทุ่ม
+   (ไซต์ที่สร้างตอนเช้าจะมี auto-update เปิดอยู่ทั้งวัน และ cron ของ WordPress เองอาจ
+   ยิงอัป major ไปก่อนในช่วงนั้น — ดู [08 ADR-012](08-decisions.md))
+
+3. **`nginx -s reload`** — ข้อนี้สำคัญกว่าที่คิด
 
    ระหว่างที่ panel สร้าง vhost เสร็จแต่ nginx ยังไม่ reload โดเมนใหม่ยัง**ไม่มี server block
    ในคอนฟิกที่รันอยู่** ทุก request จึงตกไปที่ default server = ผู้ใช้เห็นเว็บของลูกค้าอีกราย

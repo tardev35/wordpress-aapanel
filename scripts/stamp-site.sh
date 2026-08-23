@@ -26,6 +26,16 @@ dir="/www/server/panel/vhost/nginx/extension/$d"
 mkdir -p "$dir"
 ln -sf "$COMMON" "$dir/00-common.conf"
 
+# ปิด auto-update ให้ไซต์ใหม่ตั้งแต่ตอนนี้ ไม่ต้องรอ cron รอบ 5 ทุ่ม
+#
+# ทำไมรอไม่ได้: ไซต์ที่สร้างตอนเช้าจะมี auto-update เปิดอยู่ทั้งวันจนกว่า cron จะมาถึง
+# และ cron ของ WordPress เองอาจยิงอัปเวอร์ชันไปก่อนในช่วงนั้น (ดู docs/08 ADR-012)
+# สคริปต์ที่เรียกเป็น idempotent อยู่แล้ว จึงเรียกซ้ำได้ไม่มีผลข้างเคียง
+AUTOUPD=/root/wpaa/scripts/set-wp-autoupdate.sh
+if [ -x "$AUTOUPD" ]; then
+  "$AUTOUPD" | grep "ปิดแล้ว" || true
+fi
+
 /www/server/nginx/sbin/nginx -t
 /etc/init.d/nginx reload
 echo "stamped: $d"
