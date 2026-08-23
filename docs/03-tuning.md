@@ -142,7 +142,7 @@ expose_php = Off
 
 ### ⚠️ กับดัก: `php.ini` มี opcache ซ้ำสองชุด
 
-บนเครื่อง A ค่า opcache ปรากฏสองรอบในไฟล์เดียว — ชุดของ aaPanel เอง แล้วตามด้วยชุดที่เติมทีหลัง
+บนเครื่องอ้างอิง ค่า opcache ปรากฏสองรอบในไฟล์เดียว — ชุดของ aaPanel เอง แล้วตามด้วยชุดที่เติมทีหลัง
 
 ```
 1931:opcache.memory_consumption=128        <- ของ aaPanel
@@ -268,7 +268,7 @@ mysql -uroot -p -e "SHOW VARIABLES WHERE Variable_name IN \
 
 ## 3.5 Redis
 
-> 🔴 **สถานะจริงบนเครื่อง A (2026-08-23): ยังไม่ได้ตั้ง `maxmemory`**
+> 🔴 **สถานะจริงบนเครื่องอ้างอิง (2026-08-23): ยังไม่ได้ตั้ง `maxmemory`**
 > CHANGELOG รุ่นแรกเขียนว่าตั้งไปแล้ว แต่ `grep '^maxmemory' /www/server/redis/redis.conf`
 > ไม่คืนอะไรเลย แปลว่า Redis ยังโตได้ไม่จำกัดและจะไปแย่ง RAM กับ MariaDB
 > — เป็นช่องโหว่ของงบ RAM ที่เปิดอยู่จริง ไม่ใช่แค่รายการใน TODO

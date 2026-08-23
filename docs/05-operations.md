@@ -30,7 +30,7 @@
 ssh root@SERVER_IP "bash -s" < scripts/verify-config.sh
 ```
 
-> 📌 **รอบ 2026-08-23 สคริปต์นี้จับ drift ได้จริง** — รายงานว่าเครื่อง A ไม่มี `fastcgi_cache_lock`,
+> 📌 **รอบ 2026-08-23 สคริปต์นี้จับ drift ได้จริง** — รายงานว่าเครื่องอ้างอิง ไม่มี `fastcgi_cache_lock`,
 > ไม่มี `use_stale`, ยังมี `Cache-Control: max-age=0` และ Redis ไม่มี `maxmemory`
 > ทั้งที่เอกสารรุ่นแรกเขียนเหมือนทำครบแล้วทุกข้อ
 >
