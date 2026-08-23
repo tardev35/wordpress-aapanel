@@ -1,0 +1,16 @@
+# ห้าม commit ความลับ
+.env
+*.key
+*.pem
+*credentials*
+*secret*
+
+# ไฟล์สำรอง config จริงจากเซิร์ฟเวอร์ (อาจมี path/IP จริง)
+*.bak
+*.bak-*
+*.broken
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp

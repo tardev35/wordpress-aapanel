@@ -1,0 +1,6 @@
+# ไฟล์ที่ถูกอัปไปรันบน Linux ต้องเป็น LF เสมอ
+# ถ้าติด CRLF มาจาก Windows จะเจอ `bash: $'\r': command not found` บนเซิร์ฟเวอร์
+# หรือ nginx -t ฟ้อง syntax error แบบหาสาเหตุไม่เจอ
+*.sh   text eol=lf
+*.conf text eol=lf
+*.ini  text eol=lf
