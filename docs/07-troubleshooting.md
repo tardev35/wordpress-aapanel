@@ -310,6 +310,72 @@ ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
 
 ---
 
+### 14. ขอ Let's Encrypt ไม่ผ่าน — "Verification failed / verification URL cannot be accessed"
+
+**อาการ:** กด Apply SSL แล้วขึ้น
+
+```
+Invalid response from http://DOMAIN/.well-known/acme-challenge/xxxxx: 404
+```
+
+และในคอลัมน์ SSL ของ WP Toolkit ขึ้น `Not Set`
+
+### 🔴 cron ต่ออายุ SSL ไม่ได้ช่วยเคสนี้
+
+งาน `Domain SSL Renew` ตอน 08:46 คือ `acme_v2.py --renew_v3=1` — **`--renew` ต่ออายุเฉพาะ
+ใบที่ออกสำเร็จไปแล้ว** ไซต์ที่ยังไม่เคยมีใบเลยจึงไม่มีอะไรให้ต่อ ต้องออกให้ผ่านเองก่อนหนึ่งครั้ง
+แล้ว cron ถึงจะดูแลต่อให้ตลอดไป
+
+### วินิจฉัย — วางไฟล์จริงแล้วยิงเทียบ 3 ทาง
+
+อย่ายิงชื่อไฟล์มั่ว เพราะไฟล์ที่ไม่มีอยู่จริงก็ต้องได้ 404 อยู่แล้ว ไม่ได้พิสูจน์อะไร
+
+```bash
+D=DOMAIN.TLD
+ssh root@SERVER_IP "mkdir -p /www/wwwroot/$D/.well-known/acme-challenge &&   echo PROBE-OK > /www/wwwroot/$D/.well-known/acme-challenge/probe &&   chown -R www:www /www/wwwroot/$D/.well-known"
+
+curl -s  --resolve $D:80:SERVER_IP  "http://$D/.well-known/acme-challenge/probe"   # origin http
+curl -s                              "http://$D/.well-known/acme-challenge/probe"   # ผ่าน DNS จริง
+```
+
+| origin http | ผ่าน DNS จริง | แปลว่า |
+|---|---|---|
+| `PROBE-OK` | `PROBE-OK` | เซิร์ฟเวอร์ปกติ ปัญหาอยู่ที่อื่น (ดู "ถ้า DNS ถูกแล้วยังไม่ผ่าน") |
+| `PROBE-OK` | **หน้าอื่น / 404** | 🎯 **DNS ไม่ได้ชี้มาที่เครื่องนี้** |
+| 404 | 404 | ไซต์บนเครื่องมีปัญหาเอง — เช็ค vhost |
+
+**อย่าลืมลบไฟล์ probe ทิ้งหลังทดสอบ**
+
+### เคสจริง 2026-08-23
+
+3 โดเมน (`ufamax789pro.com`, `temtem168pro.com`, `bbc29pro.com`) ขอ SSL ไม่ผ่าน
+
+- ยิงตรงที่ origin ทาง http → **`PROBE-OK` (200)** = เซิร์ฟเวอร์เสิร์ฟ challenge ได้ปกติ
+- ยิงผ่าน DNS จริง → ได้ **หน้า "This Page Does Not Exist" ที่มี Google Analytics
+  และ bootstrapcdn อยู่ข้างใน** ซึ่งเป็นหน้า parking ของผู้ให้บริการอื่น
+  **เซิร์ฟเวอร์เราไม่มีทางเสิร์ฟหน้านั้น**
+
+สรุป: **DNS ของ 3 โดเมนนี้ยังไม่ได้ชี้มาที่เครื่อง** ตรงกับคำเตือนที่หน้า Apply SSL
+เขียนไว้เองว่า *"Please check whether the A record resolution of the domain points to
+this server IP"*
+
+เทียบกับ `yes989-club.com` ที่ขอผ่าน: ทั้ง origin และผ่าน DNS จริงได้เนื้อหาเดียวกัน
+
+**แก้:** ไปตั้ง A record ใน Cloudflare ให้ชี้มาที่ IP ของเครื่อง แล้วกด Apply SSL ใหม่
+
+### ถ้า DNS ถูกแล้วยังไม่ผ่าน
+
+เช็คสองอย่างนี้ต่อ:
+
+1. **Cloudflare → SSL/TLS → Edge Certificates → Always Use HTTPS**
+   ถ้าเปิดอยู่ CF จะ redirect challenge ไป https ซึ่งตอนนั้นไซต์ยังไม่มี cert
+   origin จึงไม่มี server block ที่ตรงชื่อ → ตกไปที่ catch-all → 404
+   **ปิดชั่วคราวตอนขอ cert แล้วเปิดกลับ** หรือปิดเมฆส้มชั่วคราว
+2. **ใช้ DNS Verification แทน File Verification** ในหน้า Apply SSL
+   (ปุ่มอยู่ข้าง ๆ กัน) เลี่ยงเรื่อง HTTP ทั้งหมด
+
+---
+
 ## 📌 กฎที่สรุปได้จากปัญหาทั้งหมด
 
 1. **สำรองก่อนแก้เสมอ** — `cp <file> <file>.bak-$(date +%F)`
