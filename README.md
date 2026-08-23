@@ -67,33 +67,46 @@
 | MariaDB (buffer pool 4G + per-connection) | ~4.5 GB |
 | PHP-FPM 8.3 (35 × ~80 MB) | 2.8 GB |
 | OPcache | 1.0 GB |
-| Redis | *(ยังไม่จำกัด — ดูด้านล่าง)* |
+| Redis | 1.0 GB |
 | FastCGI Cache | 1.0 GB |
 | Nginx + OS + aaPanel | 1.0 GB |
-| **รวมที่ควบคุมได้** | **~10.3 GB** |
+| **รวม** | **~11.3 GB** |
+| **Headroom** | **~3.7 GB** |
 
-🔴 **Redis ยังไม่ได้ตั้ง `maxmemory`** แปลว่ามันโตได้ไม่จำกัดและจะไปแย่ง RAM กับ MariaDB
-เป็นช่องโหว่ของงบ RAM ที่ยังเปิดอยู่จริง ๆ ไม่ใช่แค่ TODO บนกระดาษ (ดู [03-tuning §3.5](docs/03-tuning.md))
+Redis ตั้ง `maxmemory 1gb` + `maxmemory-policy allkeys-lru` แล้วเมื่อ 2026-08-23
+(ตอนตั้งใช้จริงอยู่ 748 KB — เพดานนี้เผื่อไว้ ไม่ใช่ค่าที่ใช้อยู่)
+ดูว่าทำไมต้องมี policy ด้วยที่ [03-tuning §3.5](docs/03-tuning.md)
 
 ---
 
 ## ผลการวัด TTFB
 
+วัดบนเครื่องอ้างอิงเอง 2026-08-23 หลังติดตั้ง config ฉบับที่จูนแล้ว
+(`curl` → `127.0.0.1` พร้อม `Host:` ของเว็บจริง)
+
 | สถานะ | TTFB |
 |---|---|
-| Cache MISS (ผ่าน PHP + MySQL) | 35 ms |
-| Cache HIT | 0.3 ms |
+| Cache MISS (ผ่าน PHP + MySQL) | **62 ms** |
+| Cache HIT | **0.25–0.44 ms** |
 
-> ตัวเลขนี้วัดจากเครื่องที่ **ตั้ง FastCGI cache ตาม [`configs/enable-php-83-wpfastcgi.conf`](configs/enable-php-83-wpfastcgi.conf) แล้ว**
-> **เครื่องอ้างอิง ยังไม่ได้ตั้ง** (ไฟล์ยังเป็นฉบับโรงงานของ WP Toolkit) จึงยังไม่มีตัวเลข baseline ของตัวเอง
-> ยืนยันสถานะได้ทุกเมื่อด้วย `bash scripts/verify-config.sh`
+**cache ลดภาระลงราว 200 เท่า** — request ที่ HIT ไม่แตะ PHP และ MySQL เลย
+
+```bash
+H=DOMAIN.TLD
+for i in 1 2 3; do
+  curl -sI http://127.0.0.1 -H "Host: $H" | grep -i '^x-cache'
+  curl -o /dev/null -sw "TTFB %{time_starttransfer}s
+" http://127.0.0.1 -H "Host: $H"
+done
+```
+
+> ครั้งแรกหลังล้าง cache จะเป็น MISS เสมอ ครั้งถัดไปต้องเป็น HIT
+> ถ้า HIT ไม่มาเลย แปลว่า config หลุด — `scripts/verify-config.sh`
 
 ---
 
 ## 🔴 งานที่ยังค้าง (ยืนยันจากเครื่องอ้างอิง เมื่อ 2026-08-23)
 
-- [ ] **`enable-php-83-wpfastcgi.conf` ยังเป็นฉบับโรงงาน** — ยังมี `Cache-Control: max-age=0`, `Last-Modified`, `fastcgi_cache_valid 200 1d` และไม่มี `cache_lock`/`use_stale` (ดู [04-cache §4.2](docs/04-cache.md))
-- [ ] **Redis ยังไม่ตั้ง `maxmemory`**
 - [ ] **ล็อก panel** — ยังเป็นพอร์ต `8888` ต้องเปลี่ยนพอร์ต + security entrance + password
 - [ ] **ตั้ง Backup + ทดสอบ restore** — ยังไม่มี backup เลยแม้แต่ชุดเดียว
 - [ ] SSH: ปิด password login (คีย์ใช้ได้แล้ว แต่ password ยังเปิดอยู่)
@@ -111,6 +124,10 @@
 - [x] OPcache 1 GB, `memory_limit 256M`
 - [x] Fail2ban ติดตั้งแล้ว
 - [x] **ปิดรู `default_server` พอร์ต 443** + www→non-www ที่ระดับ nginx (2026-08-23 — ดู [02-hardening §2.8](docs/02-hardening.md))
+- [x] **FastCGI cache ใช้ config ฉบับที่จูนแล้ว** (2026-08-23) — ⚠️ ต้องเช็คซ้ำหลังเพิ่มไซต์ทุกครั้ง เพราะ WP Toolkit เขียนทับไฟล์นี้ ([04-cache §4.2](docs/04-cache.md))
+- [x] **Redis `maxmemory 1gb` + `allkeys-lru`** (2026-08-23)
+
+> `scripts/verify-config.sh` ตอนนี้ขึ้น **ผ่านทั้งหมด** — ใช้ยืนยันได้ทุกเมื่อว่ายังจริงอยู่ไหม
 
 ---
 
