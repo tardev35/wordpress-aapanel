@@ -273,19 +273,33 @@ mysql -uroot -p -e "SHOW VARIABLES WHERE Variable_name IN \
 > ไม่คืนอะไรเลย แปลว่า Redis ยังโตได้ไม่จำกัดและจะไปแย่ง RAM กับ MariaDB
 > — เป็นช่องโหว่ของงบ RAM ที่เปิดอยู่จริง ไม่ใช่แค่รายการใน TODO
 
+**วิธีที่แนะนำ — ใช้สคริปต์ ตั้งให้ครบทั้งคู่และ restart ให้:**
+
+```powershell
+scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
+ssh root@SERVER_IP "bash /tmp/wpaa/scripts/set-redis-limit.sh"
+```
+
+**ถ้าอยากทำเอง:**
+
 ```bash
 grep -n "maxmemory" /www/server/redis/redis.conf
 
 # ถ้ายังไม่มี
-sudo tee -a /www/server/redis/redis.conf > /dev/null <<'EOF'
+cp -p /www/server/redis/redis.conf /www/server/redis/redis.conf.bak-$(date +%F)
+cat >> /www/server/redis/redis.conf <<'RCONF'
 
 maxmemory 1gb
 maxmemory-policy allkeys-lru
-EOF
+RCONF
 
-sudo systemctl restart redis
-redis-cli ping   # PONG
+/etc/init.d/redis restart    # ไม่ใช้ systemctl (กฎข้อ 1 ของ repo นี้)
+redis-cli ping               # PONG
 ```
+
+> ❌ **อย่าใช้ช่อง `maxmemory` ในหน้า Redis ของ aaPanel เป็นทางหลัก**
+> ช่องนั้นรับ **ตัวเลขหน่วย MB** (พิมพ์ `1gb` ไม่ได้ ต้องพิมพ์ `1024`) และมันตั้งให้แค่
+> `maxmemory` ตัวเดียว ไม่ได้ตั้ง policy — ซึ่งเป็นครึ่งที่สำคัญกว่า
 
 **ทำไมต้องจำกัด:** ถ้าไม่ตั้ง Redis จะโตไม่มีขีดจำกัดจนแย่ง RAM กับ MariaDB
 

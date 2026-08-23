@@ -140,7 +140,7 @@ ssh root@SERVER_IP "bash -s" < scripts/inventory.sh
 
 - [ ] **`enable-php-83-wpfastcgi.conf`** ใช้ฉบับใน `configs/` ตั้งแต่แรก อย่าปล่อยฉบับโรงงานไว้
       (ฉบับโรงงานตั้ง `fastcgi_cache_valid 200 1d` = หน้าที่ cache ผิดค้าง 1 วัน)
-- [ ] **Redis `maxmemory 1gb` + `allkeys-lru`** — ไม่ตั้ง = Redis โตไปแย่ง RAM กับ MariaDB
+- [ ] **Redis `maxmemory 1gb` + `allkeys-lru`** (`scripts/set-redis-limit.sh`) — ไม่ตั้ง = Redis โตไปแย่ง RAM กับ MariaDB · ตั้งแต่ `maxmemory` อย่างเดียวแย่กว่าไม่ตั้ง ([03 §3.5](03-tuning.md))
 - [ ] **เปลี่ยนพอร์ต panel + security entrance + password** ([02 §2.1](02-hardening.md))
 - [ ] **ปิด SSH password login** หลังยืนยันว่า key ใช้ได้ ([02 §2.3](02-hardening.md))
 - [ ] **Cloudflare SSL = Full (Strict)** ไม่ใช่ Full ธรรมดา — Full ธรรมดาไม่ตรวจว่า cert
