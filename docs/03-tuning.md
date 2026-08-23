@@ -276,9 +276,11 @@ mysql -uroot -p -e "SHOW VARIABLES WHERE Variable_name IN \
 **วิธีที่แนะนำ — ใช้สคริปต์ ตั้งให้ครบทั้งคู่และ restart ให้:**
 
 ```powershell
-scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
-ssh root@SERVER_IP "bash /tmp/wpaa/scripts/set-redis-limit.sh"
+ssh root@SERVER_IP "bash -s" < scripts/set-redis-limit.sh
 ```
+
+> สคริปต์นี้ไม่ได้อ่านไฟล์ใน `configs/` จึงส่งผ่าน stdin ได้เลย **ไม่ต้อง `scp`**
+> และได้เวอร์ชันล่าสุดจาก repo เสมอ
 
 **ถ้าอยากทำเอง:**
 

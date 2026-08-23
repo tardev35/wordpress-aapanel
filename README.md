@@ -131,6 +131,35 @@
 
 ---
 
+## สคริปต์ใน repo
+
+**มีสองวิธีรัน และเลือกผิดจะเจอ `No such file or directory`**
+
+| วิธี | ใช้กับ | ทำไม |
+|---|---|---|
+| `ssh root@IP "bash -s" < scripts/X.sh` | สคริปต์ที่อยู่ได้ด้วยตัวเอง | ส่งเนื้อสคริปต์ผ่าน stdin ไม่ต้องอัปไฟล์ **ได้เวอร์ชันล่าสุดเสมอ** |
+| `scp -r configs scripts ...` แล้วค่อย `ssh ... "bash /tmp/wpaa/scripts/X.sh"` | สคริปต์ที่ต้องอ่านไฟล์ใน `configs/` | มันเปิดไฟล์ข้าง ๆ ตัวเอง จึงต้องมีทั้งโฟลเดอร์อยู่บนเครื่อง |
+
+| สคริปต์ | ทำอะไร | รันยังไง |
+|---|---|---|
+| [`inventory.sh`](scripts/inventory.sh) | เก็บค่าจริงทั้งเครื่อง **อ่านอย่างเดียว** | `bash -s` |
+| [`verify-config.sh`](scripts/verify-config.sh) | เช็คว่าค่าที่เอกสารอ้างยังอยู่ไหม | `bash -s` |
+| [`healthcheck.sh`](scripts/healthcheck.sh) | สถานะ service ตอนนี้ | `bash -s` |
+| [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache ทั้งหมด | `bash -s` |
+| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + reload · **ทุกครั้งหลัง Add site** | `bash -s` หรือ `/root/stamp-site.sh` |
+| [`set-redis-limit.sh`](scripts/set-redis-limit.sh) | `maxmemory` + `maxmemory-policy` พร้อม restart | `bash -s` |
+| [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | ต้อง `scp` ก่อน |
+| [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | ต้อง `scp` ก่อน |
+| [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | ต้อง `scp` ก่อน (มีคำถาม yes/no) |
+
+> `fix-permissions.sh` ใช้ `bash -s` ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอส่งสคริปต์ทาง stdin
+> คำถามจะอ่านค่าไม่ได้และตอบ "ยกเลิก" ทันที
+
+> **ถ้าเพิ่งดึง repo เวอร์ชันใหม่มา ต้อง `scp -r configs scripts` ใหม่ก่อนใช้สองตัวล่าง**
+> ของที่อยู่ใน `/tmp/wpaa/` บนเครื่องคือ snapshot ของตอนที่อัปครั้งก่อน ไม่ได้อัปเดตตามเอง
+
+---
+
 ## Quick Reference
 
 ```bash

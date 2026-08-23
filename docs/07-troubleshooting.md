@@ -219,7 +219,8 @@ server block แรกที่ listen 443 — อธิบายเต็มใ
 
 **แก้:**
 ```bash
-# ครั้งเดียวต่อเครื่อง
+# ครั้งเดียวต่อเครื่อง - ต้อง scp ก่อน เพราะสคริปต์อ่านไฟล์ใน configs/
+scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
 ssh root@SERVER_IP "bash /tmp/wpaa/scripts/harden-nginx.sh && /etc/init.d/nginx reload"
 
 # ทุกครั้งหลัง Add site
