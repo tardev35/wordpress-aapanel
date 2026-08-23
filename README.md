@@ -202,6 +202,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |
+| [`check-wp-versions.sh`](scripts/check-wp-versions.sh) | ดูว่าแต่ละไซต์ได้ WP เวอร์ชันอะไร และมาจากแพ็กเกจไหน | scp หรือ cmd /c |
 | [`nightly-check.sh`](scripts/nightly-check.sh) | ตัวงานที่ cron เรียก — ไม่ต้องรันเอง | cron เรียกให้ |
 
 > `fix-permissions.sh` ส่งทาง stdin ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอตัวสคริปต์เองมาทาง stdin
