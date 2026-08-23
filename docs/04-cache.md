@@ -47,6 +47,15 @@ WP Toolkit จะสลับ include จาก `enable-php-83.conf` เป็�
 >
 > ยืนยันได้ทุกเมื่อ: `ssh root@SERVER_IP "bash -s" < scripts/verify-config.sh`
 >
+> **ติดตั้งฉบับที่จูนแล้ว:**
+> ```powershell
+> scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
+> ssh root@SERVER_IP "bash /tmp/wpaa/scripts/apply-cache-config.sh"
+> ssh root@SERVER_IP "/etc/init.d/nginx reload"
+> ssh root@SERVER_IP "bash /tmp/wpaa/scripts/clear-cache.sh"
+> ```
+> สคริปต์สำรองของเดิมให้ก่อน และ **ถ้า `nginx -t` ไม่ผ่านจะกู้ไฟล์เดิมกลับอัตโนมัติ**
+>
 > ผลที่ตามมาไม่ใช่แค่ "ช้ากว่าที่ควร" — `fastcgi_cache_valid 200 1d` ของฉบับโรงงาน
 > ทำให้หน้าที่ cache ผิดพลาดค้างอยู่ **1 วัน** แทนที่จะเป็น 1 ชั่วโมง (ดู §4.5)
 
@@ -80,6 +89,27 @@ WP Toolkit จะสลับ include จาก `enable-php-83.conf` เป็�
 > ถ้ามีคำสั่งนี้ เว็บจะยังเสิร์ฟหน้าเก่าได้แทน
 
 **ไฟล์เต็ม:** [`configs/enable-php-83-wpfastcgi.conf`](../configs/enable-php-83-wpfastcgi.conf)
+
+### 🔴 WP Toolkit เขียนทับไฟล์นี้ — และบ่อยกว่าที่คิด
+
+เดิมเข้าใจว่าเสี่ยงเฉพาะตอน "อัปเดต aaPanel" **ของจริงแรงกว่านั้น**
+
+หลักฐานจากเครื่องอ้างอิง: `enable-php-83-wpfastcgi.conf` มี mtime เป็น **06:34** ซึ่งเป็น
+**นาทีเดียวกับที่ vhost ของไซต์ใหม่ถูกสร้าง** และเนื้อไฟล์กลับไปเป็นฉบับโรงงานขนาดเท่าเดิมเป๊ะ
+(1265 ไบต์) เท่ากับ backup ของเมื่อวาน
+
+แปลว่า **การเพิ่มไซต์ใหม่ที่เปิด cache (ปุ่ม ⚡) เขียนไฟล์กลางตัวนี้ใหม่ทั้งไฟล์**
+ไม่ใช่แค่ไปแก้ include ของไซต์นั้น — ไซต์ที่มีอยู่เดิมทั้งหมดจึงเสียค่าที่จูนไว้ไปพร้อมกัน
+โดยไม่มีสัญญาณอะไรเตือน
+
+**กติกาที่ตามมา: หลังเพิ่มไซต์ทุกครั้ง ไม่ใช่แค่หลังอัปเดต panel**
+
+```powershell
+ssh root@SERVER_IP "bash -s" < scripts/verify-config.sh
+```
+
+ถ้าขึ้นแดง ให้รัน `apply-cache-config.sh` ซ้ำ — เป็นงานที่ต้องทำเรื่อย ๆ ตราบใดที่ยังเพิ่มไซต์อยู่
+ไม่ใช่ตั้งครั้งเดียวจบ
 
 ### วิธีติดตั้ง
 

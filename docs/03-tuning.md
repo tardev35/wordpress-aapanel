@@ -289,6 +289,36 @@ redis-cli ping   # PONG
 
 **ทำไมต้องจำกัด:** ถ้าไม่ตั้ง Redis จะโตไม่มีขีดจำกัดจนแย่ง RAM กับ MariaDB
 
+### 🔴 ตั้ง `maxmemory` อย่างเดียวไม่พอ — จะแย่กว่าเดิม
+
+ช่อง `maxmemory` ในหน้า Redis ของ aaPanel (หน่วยเป็น **MB** ใส่ `1024`) ตั้งได้แค่ตัวเลข
+**แต่ไม่ได้ตั้ง `maxmemory-policy` ให้** และค่าเริ่มต้นของ Redis คือ:
+
+```
+maxmemory-policy  noeviction
+```
+
+`noeviction` แปลว่า **พอเต็มเพดานแล้ว Redis จะปฏิเสธคำสั่งเขียนทั้งหมด** ไม่ใช่ทิ้งคีย์เก่า
+สำหรับ object cache นี่คืออาการที่แย่กว่าไม่จำกัดเลย — WordPress จะเริ่มได้ error ตอนเขียน cache
+แทนที่จะแค่ใช้ RAM เยอะ
+
+**ต้องตั้งคู่กันเสมอ** ผ่านแท็บ **Config file** ในหน้า Redis เดียวกัน:
+
+```
+maxmemory 1gb
+maxmemory-policy allkeys-lru
+```
+
+แล้วกด **Restart Redis Service** (reload ไม่พอ)
+
+**ยืนยันว่าติดจริง:**
+```bash
+redis-cli config get maxmemory        # ต้องได้ 1073741824
+redis-cli config get maxmemory-policy # ต้องได้ allkeys-lru
+```
+
+> `allkeys-lru` = พอเต็มให้ทิ้งคีย์ที่ไม่ได้ใช้นานที่สุด ซึ่งเป็นพฤติกรรมที่ถูกต้องของ cache
+
 ---
 
 ## Checklist
