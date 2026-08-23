@@ -9,7 +9,7 @@
 | ความถี่ | งาน | ทำที่ไหน | เวลา |
 |---|---|---|---|
 | ทุกวัน | ดูอีเมลแจ้งเตือน backup ว่าสำเร็จ | อีเมล | 1 นาที |
-| ทุกสัปดาห์ | อัปเดต WP core / plugin / theme | WP Toolkit | 20 นาที |
+| **ทุกสัปดาห์** | 🔴 **อัปเดต WP core / plugin / theme** | WP Toolkit | 20 นาที |
 | ทุกสัปดาห์ | ดู resource usage | aaPanel Dashboard | 2 นาที |
 | **ทุกวัน 23:00** | ตรวจ+ซ่อม config อัตโนมัติ (§5.1b) | 🤖 cron | 0 นาที |
 | **ทุกเดือน** | **อัปเดต aaPanel** + **`verify-config.sh`** | GUI + CLI | 15 นาที |
@@ -89,6 +89,10 @@ ssh root@SERVER_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --remove-cron"
 | `enable-php-83-wpfastcgi.conf` ถูก WP Toolkit เขียนทับ | กู้ฉบับที่จูนแล้วกลับ + ล้าง cache |
 | `0.catchall_ssl.conf` หาย | ติดตั้งกลับ |
 | ไซต์ที่ยังไม่ได้ stamp (ไม่มี `00-common.conf`) | ใส่กฎกลางให้ |
+| ไซต์ใหม่ที่ auto-update ยังเปิดอยู่ | ใส่ `AUTOMATIC_UPDATER_DISABLED` (ตรวจ `php -l` ก่อนทับ) |
+
+> 🔴 **เพราะ auto-update ถูกปิด งาน "อัปเดต WP ทุกสัปดาห์" ในตารางข้างบนจึงเปลี่ยนจาก
+> "ควรทำ" เป็น "ห้ามพลาด"** — ไม่มีอะไรมาแพตช์ช่องโหว่ให้แล้ว ดู [08 ADR-012](08-decisions.md)
 
 **มันแก้ให้เลย ไม่ใช่แค่รายงาน** เพราะวิธีแก้คือเอาไฟล์ที่รู้ว่าถูกไปทับ ซึ่งไม่ต้องใช้วิจารณญาณ
 แต่จะแตะเฉพาะตอนที่ต่างจริง และ **`nginx -t` ก่อน reload เสมอ** ถ้าไม่ผ่านจะไม่ reload

@@ -49,7 +49,8 @@
 | Redis | 8.0.5 |
 | PHP ที่ติดตั้งจริง | **8.0, 8.1, 8.2, 8.3** |
 | PHP ที่เว็บใช้จริง | 8.3 ทุกเว็บ WordPress (+ static 1 เว็บ ใช้ `enable-php-00`) |
-| จำนวนไซต์ | 13 (WordPress 12 + static 1) |
+| จำนวนไซต์ | 19 (WordPress 18 + static 1) — ทีมเพิ่มเรื่อย ๆ ใช้ `inventory.sh` ดูของจริง |
+| WordPress | 7.1 · **auto-update ปิดทั้งหมด** ([ADR-012](docs/08-decisions.md)) |
 
 ### ⚠️ PHP 8.4 ไม่มีบนเครื่องนี้
 
@@ -127,6 +128,7 @@ done
 - [x] **ปิดรู `default_server` พอร์ต 443** + www→non-www ที่ระดับ nginx (2026-08-23 — ดู [02-hardening §2.8](docs/02-hardening.md))
 - [x] **FastCGI cache ใช้ config ฉบับที่จูนแล้ว** (2026-08-23) — ⚠️ ต้องเช็คซ้ำหลังเพิ่มไซต์ทุกครั้ง เพราะ WP Toolkit เขียนทับไฟล์นี้ ([04-cache §4.2](docs/04-cache.md))
 - [x] **Redis `maxmemory 1gb` + `allkeys-lru`** (2026-08-23)
+- [x] **ปิด auto-update ของ WordPress ทุกไซต์** (2026-08-23 — ดู [08 ADR-012](docs/08-decisions.md)) · 🔴 แลกมาด้วยการที่ **ต้องอัปเดต WP เองทุกสัปดาห์ ห้ามพลาด**
 
 > `scripts/verify-config.sh` ตอนนี้ขึ้น **ผ่านทั้งหมด** — ใช้ยืนยันได้ทุกเมื่อว่ายังจริงอยู่ไหม
 
@@ -199,6 +201,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
+| [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |
 | [`nightly-check.sh`](scripts/nightly-check.sh) | ตัวงานที่ cron เรียก — ไม่ต้องรันเอง | cron เรียกให้ |
 
 > `fix-permissions.sh` ส่งทาง stdin ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอตัวสคริปต์เองมาทาง stdin

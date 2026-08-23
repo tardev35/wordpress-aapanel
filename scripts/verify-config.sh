@@ -67,6 +67,14 @@ for f in "$VHOST"/*.conf; do
 done
 if [ -z "$MISSING" ]; then echo "OK"; else echo "ขาด ->$MISSING (รัน stamp-site.sh)"; FAIL=1; fi
 
+printf "%-34s : " "WP auto-update ปิดหมด"
+WPMISS=""
+for c in /www/wwwroot/*/wp-config.php; do
+  [ -f "$c" ] || continue
+  grep -q AUTOMATIC_UPDATER_DISABLED "$c" || WPMISS="$WPMISS $(basename "$(dirname "$c")")"
+done
+if [ -z "$WPMISS" ]; then echo "OK"; else echo "ยังเปิดอยู่ ->$WPMISS (รัน set-wp-autoupdate.sh)"; FAIL=1; fi
+
 echo
 if [ "$FAIL" = "0" ]; then
   echo "ผ่านทั้งหมด"

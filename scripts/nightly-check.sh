@@ -92,6 +92,19 @@ else
   log "[ok] ไม่มีอะไรเปลี่ยน"
 fi
 
+# ---------- 5. WordPress auto-update ----------
+# ไซต์ที่สร้างใหม่จะมาพร้อม auto-update เปิดอยู่เสมอ (WordPress 5.6+ เปิด major ให้เอง)
+# ถ้าไม่ไล่ปิด นโยบายที่ตั้งไว้จะรั่วทีละไซต์ทุกครั้งที่ทีมเพิ่มเว็บ
+# เรียกสคริปต์ตัวเดิม ไม่เขียนตรรกะซ้ำ - มันข้ามไซต์ที่ตั้งไว้แล้วและตรวจ php -l ให้เอง
+if [ -x "$ROOT/scripts/set-wp-autoupdate.sh" ]; then
+  newly=$("$ROOT/scripts/set-wp-autoupdate.sh" 2>&1 | grep "ปิดแล้ว" || true)
+  if [ -n "$newly" ]; then
+    echo "$newly" | while IFS= read -r l; do
+      log "[แก้] ปิด auto-update: $(echo "$l" | awk '{print $1}')"
+    done
+  fi
+fi
+
 # ---------- 5. ตัด log ไม่ให้โต ----------
 if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt "$LOG_KEEP" ]; then
   tail -n "$LOG_KEEP" "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"

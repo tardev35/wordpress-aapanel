@@ -12,10 +12,28 @@ Checklist สำหรับสร้างเว็บ WordPress ใหม่�
 |---|---|
 | Domain | โดเมนจริง |
 | **PHP Version** | **8.3** ⚠️ ต้องเป็น 8.3 เสมอ |
+| WordPress version | เลือกอะไรก็ได้ — **มันไม่อยู่กับที่** ดูด้านล่าง |
 | Database | ✅ สร้างใหม่ (แยก user ต่อเว็บ) |
 | FTP | ❌ ไม่ต้อง |
 
 **ทีมงานไม่ต้องแตะ CLI เลย** — หลังติดตั้งเสร็จเข้า wp-admin ทำงานได้ตามปกติ
+
+### ⚠️ เวอร์ชัน WordPress ที่เลือกตอนติดตั้ง ไม่ใช่เวอร์ชันที่จะได้
+
+ตั้งแต่ **WordPress 5.6** เป็นต้นมา การติดตั้งใหม่จะ**เปิด auto-update ระดับ major
+ให้เองโดยอัตโนมัติ** WP Toolkit ติดตั้งเวอร์ชันที่เลือกจริง แต่ WordPress อัปตัวเองขึ้น
+ตัวล่าสุดภายในไม่กี่ชั่วโมง
+
+หลักฐานจากเครื่องนี้ (2026-08-23): เลือก `6.5.10` ตอนติดตั้งทุกไซต์ แต่กลับมาดูเป็น **7.1**
+ทั้งหมด ยกเว้นไซต์ที่เพิ่งสร้างล่าสุดซึ่งยังค้างที่ 6.5.10 เพราะ cron ของ WordPress
+ยังไม่ถึงรอบ — พอถึงรอบก็ตามขึ้นไป
+
+**เครื่องนี้เลือกปิด auto-update ทั้งหมด** (ดู [08 ADR-012](08-decisions.md))
+`nightly-check.sh` จะไล่ปิดให้ไซต์ใหม่ทุกคืน แต่ถ้าอยากปิดทันทีไม่ต้องรอ:
+
+```powershell
+ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-autoupdate.sh"
+```
 
 ### 🔴 แล้วรัน `stamp-site.sh` ทันที — ข้ามไม่ได้
 
@@ -125,6 +143,8 @@ WP Toolkit มีฟีเจอร์ **Clone site** ที่สร้าง�
 ## 6.5 Checklist หลังสร้างเว็บ
 
 ### ความปลอดภัย
+- [ ] **auto-update ถูกปิด** — `grep AUTOMATIC_UPDATER_DISABLED wp-config.php`
+      (ถ้ายังไม่มี รัน `set-wp-autoupdate.sh` หรือรอ cron รอบกลางคืน)
 - [ ] `wp-config.php` permission = **640**
   ```bash
   chmod 640 /www/wwwroot/DOMAIN.TLD/wp-config.php
