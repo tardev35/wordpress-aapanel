@@ -4,6 +4,11 @@
 #   scp -r configs scripts root@SERVER_IP:/tmp/wpaa/
 #   ssh root@SERVER_IP "bash /tmp/wpaa/scripts/install-autoheal.sh"
 #
+# ตัวเลือก:
+#   --no-cron       คัดลอกไฟล์อย่างเดียว ไม่แตะ crontab (ใช้เมื่อจะไปตั้งใน
+#                   หน้า Cron ของ aaPanel แทน ซึ่งทีมมองเห็นและกดดูได้)
+#   --remove-cron   ถอดบรรทัด cron ที่สคริปต์นี้เคยใส่ไว้ออก
+#
 # ทำอะไร:
 #   1. คัดลอก configs/ + scripts/ ไป /root/wpaa/  (ไม่ใช่ /tmp ซึ่งหายตอนรีบูต)
 #   2. เพิ่มบรรทัดใน crontab ให้รัน nightly-check.sh ทุกวัน 23:00 เวลาไทย
@@ -25,6 +30,20 @@ DEST=/root/wpaa
 MARK="# wpaa-nightly"
 CRON_LINE="0 16 * * * /usr/bin/flock -n /tmp/wpaa-nightly.lock /root/wpaa/scripts/nightly-check.sh $MARK"
 
+MODE="${1:-install}"
+
+if [ "$MODE" = "--remove-cron" ]; then
+  CUR=$(crontab -l 2>/dev/null || true)
+  if echo "$CUR" | grep -qF "$MARK"; then
+    echo "$CUR" | grep -vF "$MARK" | crontab -
+    echo "ถอดบรรทัด cron ออกแล้ว - ไฟล์ใน $DEST ยังอยู่ครบ"
+  else
+    echo "ไม่มีบรรทัด cron ของสคริปต์นี้อยู่แล้ว"
+  fi
+  crontab -l 2>/dev/null | grep -v '^$' || true
+  exit 0
+fi
+
 [ -d "$SRC/configs" ] || { echo "ไม่เจอ $SRC/configs - อัปทั้งโฟลเดอร์ configs/ และ scripts/ ขึ้นมาด้วย"; exit 1; }
 
 echo "== 1. คัดลอกไป $DEST =="
@@ -34,6 +53,21 @@ cp -r "$SRC/scripts" "$DEST/"
 chmod +x "$DEST/scripts/"*.sh
 echo "$DEST/configs  ($(ls "$DEST/configs" | wc -l) ไฟล์)"
 echo "$DEST/scripts  ($(ls "$DEST/scripts" | wc -l) ไฟล์)"
+
+if [ "$MODE" = "--no-cron" ]; then
+  echo
+  echo "== ข้าม crontab (--no-cron) =="
+  echo "ไปตั้งในหน้า Cron ของ aaPanel แทน:"
+  echo "  Task type     : Shell Script"
+  echo "  Task name     : wpaa nightly check"
+  echo "  Execute cycle : Daily  16 : 00     <-- 16:00 UTC = 23:00 เวลาไทย"
+  echo "  Execute user  : root"
+  echo "  Script content: /root/wpaa/scripts/nightly-check.sh"
+  echo
+  echo "หน้า Cron ของ panel ใช้ 'เวลาเครื่อง' ซึ่งเครื่องนี้เป็น UTC"
+  echo "ใส่ 23:00 ตรง ๆ จะไปรัน 6 โมงเช้าของวันถัดไปตามเวลาไทย"
+  exit 0
+fi
 
 echo "== 2. crontab =="
 CUR=$(crontab -l 2>/dev/null || true)

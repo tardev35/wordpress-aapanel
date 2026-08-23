@@ -25,7 +25,7 @@
 | 7 | FastCGI Cache (`apply-cache-config.sh`) | [04](04-cache.md) | 20 นาที |
 | 8 | SSH hardening + Fail2ban | [02 §2.3–2.4](02-hardening.md) | 15 นาที |
 | 9 | 🔴 **Backup + ทดสอบ restore** | [05 §5.3](05-operations.md) | 40 นาที |
-| 9b | ตั้ง cron ตรวจ+ซ่อมเองทุกคืน (`install-autoheal.sh`) | [05 §5.1b](05-operations.md) | 2 นาที |
+| 9b | ตั้ง cron ตรวจ+ซ่อมเองทุกคืน (**ตั้งในหน้า Cron ของ panel**) | [05 §5.1b](05-operations.md) | 3 นาที |
 | 10 | เว็บแรก | [06](06-new-site.md) (WordPress) · [09](09-static-sites.md) (static) | 10 นาที |
 
 **ลำดับที่ห้ามสลับ:**
@@ -34,6 +34,49 @@
 - **ข้อ 6 ก่อนข้อ 10** — ถ้าเอาเว็บขึ้นก่อนปิดรู โดเมนที่ชี้มาแล้วแต่ยังไม่ Add site
   จะไปหยิบเว็บอื่นมาแสดง แล้วขยะจะเข้าไปติดใน cache ต่อ (ดู [04 §4.5](04-cache.md))
 - **ข้อ 9 ก่อนรับงานลูกค้าจริง** — backup ที่ไม่เคย restore สำเร็จ ยังไม่นับว่าเป็น backup
+
+---
+
+## 0.1b สรุปคำสั่งทั้งหมด (ก๊อปวางได้)
+
+ทำหลังจากติดตั้ง stack + จูนตามข้อ 1–5 ในตารางแล้ว ส่วนนี้คือของที่ repo นี้เตรียมไว้ให้
+
+```powershell
+cd C:\wordpress-aapanel
+
+# อัปไฟล์ขึ้นเครื่อง
+scp -r configs scripts root@NEW_IP:/tmp/wpaa/
+
+# 1) ปิดรู default_server 443 + กฎ www  (ต้องทำก่อนเอาเว็บขึ้น)
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/harden-nginx.sh"
+ssh root@NEW_IP "/etc/init.d/nginx reload"
+
+# 2) FastCGI cache ฉบับที่จูนแล้ว
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/apply-cache-config.sh"
+ssh root@NEW_IP "/etc/init.d/nginx reload"
+
+# 3) จำกัด RAM ของ Redis พร้อม policy
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/set-redis-limit.sh"
+
+# 4) วางไฟล์ถาวรไว้ให้ cron ใช้ (ยังไม่แตะ crontab)
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --no-cron"
+
+# 5) ยืนยัน - ต้องขึ้น "ผ่านทั้งหมด"
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/verify-config.sh"
+
+# 6) ทดสอบว่ารูปิดจริง - ต้องได้ 404
+curl -sk --resolve nosuch.invalid:443:NEW_IP https://nosuch.invalid/ -o /dev/null -w "%{http_code}"
+```
+
+**ข้อ 4 ยังไม่จบ** — ไปตั้งงานใน **aaPanel → Cron Job → Add Task** ต่อ
+(Daily · **16:00** เพราะเครื่องเป็น UTC · Script content = `/root/wpaa/scripts/nightly-check.sh`)
+รายละเอียดและกับดักเรื่องเวลาอยู่ที่ [05 §5.1b](05-operations.md)
+
+**ทุกครั้งที่เพิ่มเว็บหลังจากนี้:**
+
+```powershell
+ssh root@NEW_IP "/root/stamp-site.sh DOMAIN.TLD"
+```
 
 ---
 
