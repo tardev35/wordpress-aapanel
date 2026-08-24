@@ -222,6 +222,23 @@ URI Path equals /wp-login.php
 
 **Security → Settings → Bot Fight Mode** (ฟรี)
 
+### 🔴 ตรวจทุกครั้งหลังตั้ง WAF ว่า Googlebot ไม่โดนไปด้วย
+
+rule ที่เขียนกว้างเกินไปหรือ Bot Fight Mode จะบล็อก Googlebot ได้ ผลคือ Search Console
+รายงานว่าเว็บติด `noindex` ทั้งที่ WordPress ไม่ได้ตั้งอะไรเลย — เพราะหน้าบล็อกของ
+Cloudflare เองมี `noindex` ติดมาด้วย (เกิดขึ้นจริงกับ `brazil999-vvip.com` เมื่อ
+2026-08-23 — ดู [07 ข้อ 15](07-troubleshooting.md))
+
+```bash
+curl -s -o /dev/null -w '%{http_code}
+'   -A "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"   https://DOMAIN.TLD/
+```
+
+**ต้องได้ 200** ถ้าได้ 403 แปลว่า Googlebot โดนบล็อก → ไปดู **Security → Events**
+ว่า rule ไหนเป็นคนทำ
+
+> เว็บที่ทำมาเพื่อ SEO แล้วบล็อก Googlebot = ปลอดภัยแต่ไม่มีใครหาเจอ ซึ่งเท่ากับพังทั้งงาน
+
 ---
 
 ## 2.7b ⚠️ panel เก็บรหัสผ่าน WordPress admin เป็นข้อความธรรมดา

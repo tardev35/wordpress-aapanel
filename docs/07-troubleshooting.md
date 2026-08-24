@@ -376,6 +376,63 @@ this server IP"*
 
 ---
 
+### 15. Search Console บอก "ถูกยกเว้นโดยแท็ก noindex" ทั้งที่เว็บไม่ได้ตั้ง noindex
+
+**อาการ:** Google Search Console → ตรวจสอบ URL → ขึ้น
+*"จัดทำดัชนีหน้านี้ไม่ได้: ถูกยกเว้นโดยแท็ก noindex"*
+และกด "ทดสอบ URL ที่เผยแพร่จริง" ก็ไม่ผ่าน
+
+**อย่าเพิ่งไปแก้ WordPress** — เช็คก่อนว่า noindex มาจากเว็บเราจริงไหม
+
+```bash
+# ผ่านโดเมนจริง
+curl -s https://DOMAIN/ | grep -iEo '<title>[^<]*</title>|<meta[^>]*robots[^>]*>'
+
+# ยิงตรงที่ origin (ข้ามทุกอย่างที่อยู่ข้างหน้า)
+curl -s --resolve DOMAIN:80:SERVER_IP http://DOMAIN/ | grep -iEo '<meta[^>]*robots[^>]*>'
+```
+
+| ผ่านโดเมนจริง | origin | แปลว่า |
+|---|---|---|
+| มี noindex | มี noindex | WordPress ตั้ง `Settings → Reading → Discourage search engines` ไว้ |
+| **มี noindex** | **ไม่มี** | 🎯 **มีอะไรบางอย่างขวางอยู่ข้างหน้า ไม่ใช่เว็บเรา** |
+
+### เคสจริง 2026-08-23 — Cloudflare บล็อก
+
+`brazil999-vvip.com` ขึ้น noindex ใน GSC แต่บน origin **ไม่มี meta robots เลย**
+(ตรวจครบทั้ง 43 ไซต์บนเครื่อง — **ไม่มีไซต์ไหนตั้ง noindex สักตัว**)
+
+เปิดผ่านโดเมนจริงแล้วดูว่าได้อะไรมา:
+
+```
+HTTP 403
+<title>Attention Required! | Cloudflare</title>
+<meta name="robots" content="noindex, nofollow" />
+"Sorry, you have been blocked"
+```
+
+**Cloudflare บล็อก request นั้นอยู่ และหน้าบล็อกของ Cloudflare เองมี `noindex` ติดมาด้วย**
+Googlebot ก็โดนบล็อกเหมือนกัน จึงเห็นแต่หน้านั้นและรายงานว่าเป็น noindex
+
+เทียบกับโดเมนอื่นบนเครื่องเดียวกันที่ตอบ HTTP 200 ปกติ — **เป็นที่ zone นี้ zone เดียว
+ไม่ใช่ที่เซิร์ฟเวอร์**
+
+**แก้:** เข้า Cloudflare zone ของโดเมนนั้น
+
+1. **Security → Events** — ดูว่า rule ไหนเป็นคนบล็อก (บอกชื่อ rule ตรง ๆ) เริ่มที่นี่เสมอ
+2. **Security → WAF → Custom rules** — rule ที่เขียนกว้างเกินไปจะกิน Googlebot ไปด้วย
+3. **Security → Bots → Bot Fight Mode** — ของฟรีตัวนี้ท้าทาย crawler ที่ถูกต้องได้
+4. **Security → Settings → Security Level** — ถ้าเป็น "I'm Under Attack" ให้ลดลง
+
+> ⚠️ **[02 §2.7](02-hardening.md) ของ repo นี้แนะนำให้เปิด WAF rules และ Bot Fight Mode**
+> ซึ่งจำเป็นจริงเพราะบอทสแกนหนักมาก **แต่ต้องตรวจหลังตั้งทุกครั้งว่า Googlebot ไม่โดนไปด้วย**
+> ไม่งั้นจะได้เว็บที่ปลอดภัยแต่ไม่มีใครหาเจอ ซึ่งสำหรับเว็บที่ทำมาเพื่อ SEO คือพังทั้งงาน
+>
+> ตรวจง่าย ๆ: `curl -s -o /dev/null -w '%{http_code}' -A "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" https://DOMAIN/`
+> ต้องได้ **200** ไม่ใช่ 403
+
+---
+
 ## 📌 กฎที่สรุปได้จากปัญหาทั้งหมด
 
 1. **สำรองก่อนแก้เสมอ** — `cp <file> <file>.bak-$(date +%F)`
