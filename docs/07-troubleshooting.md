@@ -468,6 +468,64 @@ curl -sk --resolve $D:443:SERVER_IP -o /dev/null -w '%{http_code} -> %{redirect_
 
 ---
 
+### 16. noindex ที่มาจาก WordPress เอง (และแคชที่ทำให้แก้แล้วเหมือนไม่ได้แก้)
+
+ต่อจากข้อ 15 — เมื่อพิสูจน์แล้วว่า noindex **มีที่ origin ด้วย** แปลว่ามาจาก WordPress จริง
+ไม่ใช่อะไรที่อยู่ข้างหน้า
+
+**ตัวที่ทำ:** `Settings → Reading → Discourage search engines from indexing this site`
+เก็บเป็น option `blog_public = 0` ทำให้ WordPress ใส่
+`<meta name='robots' content='noindex, nofollow'>` ให้ทุกหน้า
+
+> สังเกต **single quote** รอบ `'robots'` — เป็นสไตล์ของ WordPress core
+> ถ้าเป็น double quote มักมาจากปลั๊กอินหรืออย่างอื่น
+
+มักติดจากตอนสร้างเว็บ/ติดตั้งธีมแล้วลืมปลดก่อนเปิดใช้จริง
+
+### สแกนทุกไซต์
+
+```bash
+bash /root/wpaa/scripts/fix-noindex.sh                    # ดูอย่างเดียว
+bash /root/wpaa/scripts/fix-noindex.sh --apply            # แก้ทุกไซต์
+bash /root/wpaa/scripts/fix-noindex.sh --apply DOMAIN.TLD # แก้ไซต์เดียว
+```
+
+อ่าน/เขียนผ่าน `wp-load.php` ของไซต์เอง จึงไม่ต้องดึงรหัสผ่านฐานข้อมูลออกมา
+
+> 🔴 **ตรวจครั้งแรกผมได้ผลผิดเพราะสแกนผิดวิธี** — ยิง `http://` แล้วเจอ 301 จึงไปอ่าน
+> หน้า redirect ที่ไม่มี meta อะไรเลย แล้วสรุปว่า "0 ไซต์ติด noindex"
+> **ต้องใส่ `-L` ตามลูกโซ่ให้จบก่อนเสมอ** พอทำถูกก็เจอ 28–30 ไซต์
+
+### 🔴 แก้แล้วต้องล้างแคชด้วย ไม่งั้นเหมือนไม่ได้แก้
+
+เคสจริง: `brazil999-vvip.com` ตั้ง `blog_public = 1` เรียบร้อยแล้ว แต่หน้าเว็บยังส่ง
+`noindex` อยู่
+
+```
+ไม่มี query : X-Cache: HIT     -> noindex, nofollow          <- หน้าเก่าในแคช
+มี query    : X-Cache: BYPASS  -> index, follow, max-image-preview:large
+```
+
+FastCGI cache เก็บหน้าเก่าไว้ตาม `fastcgi_cache_valid` (1 ชั่วโมง) — **ถ้า Googlebot มา
+ในช่วงนั้นพอดี ก็ยังเห็น noindex อยู่ดี** และ **ปลั๊กอิน Nginx Helper ไม่ช่วย** เพราะมันล้าง
+ตอน publish/edit โพสต์ ไม่ได้ล้างตอนเปลี่ยน setting
+
+`fix-noindex.sh --apply` จึงล้าง cache ให้เองเมื่อมีการแก้จริง ถ้าแก้ผ่านหน้า wp-admin
+ต้องล้างเอง:
+
+```bash
+bash /root/wpaa/scripts/clear-cache.sh
+```
+
+### ⚠️ ระวังแคชซ้อนแคช
+
+`brazil999-vvip.com` ติดตั้งปลั๊กอิน **`wp-fastest-cache`** ไว้ด้วย ซึ่งเป็น page cache
+อีกชั้นซ้อนบน FastCGI cache ของ nginx **เวลามีปัญหาเนื้อหาไม่อัปเดตจะแยกไม่ออกว่าใครเก็บไว้**
+ต้องล้างทั้งสองที่ ถ้าไม่ได้ต้องการจริง ๆ แนะนำให้ถอนออกแล้วใช้ FastCGI + Nginx Helper อย่างเดียว
+ตาม [04 §4.7](04-cache.md)
+
+---
+
 ## 📌 กฎที่สรุปได้จากปัญหาทั้งหมด
 
 1. **สำรองก่อนแก้เสมอ** — `cp <file> <file>.bak-$(date +%F)`
