@@ -194,7 +194,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`inventory.sh`](scripts/inventory.sh) | เก็บค่าจริงทั้งเครื่อง **อ่านอย่างเดียว** | scp หรือ cmd /c |
 | [`verify-config.sh`](scripts/verify-config.sh) | เช็คว่าค่าที่เอกสารอ้างยังอยู่ไหม | scp หรือ cmd /c |
 | [`healthcheck.sh`](scripts/healthcheck.sh) | สถานะ service ตอนนี้ | scp หรือ cmd /c |
-| [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache ทั้งหมด | scp หรือ cmd /c |
+| [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache — ทั้งเครื่อง หรือใส่โดเมนเพื่อล้างไซต์เดียว | scp หรือ cmd /c |
 | [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + ปิด auto-update + reload · **ทุกครั้งหลัง Add site** | `/root/stamp-site.sh` (มีอยู่บนเครื่องแล้ว) |
 | [`set-redis-limit.sh`](scripts/set-redis-limit.sh) | `maxmemory` + `maxmemory-policy` พร้อม restart | scp หรือ cmd /c |
 | [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
