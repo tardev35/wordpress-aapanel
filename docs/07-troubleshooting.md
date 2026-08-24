@@ -412,10 +412,45 @@ HTTP 403
 ```
 
 **Cloudflare บล็อก request นั้นอยู่ และหน้าบล็อกของ Cloudflare เองมี `noindex` ติดมาด้วย**
-Googlebot ก็โดนบล็อกเหมือนกัน จึงเห็นแต่หน้านั้นและรายงานว่าเป็น noindex
-
 เทียบกับโดเมนอื่นบนเครื่องเดียวกันที่ตอบ HTTP 200 ปกติ — **เป็นที่ zone นี้ zone เดียว
 ไม่ใช่ที่เซิร์ฟเวอร์**
+
+### ⚠️ แต่ต้องทดสอบต่อว่าใครโดนบล็อกกันแน่ — อย่าเดาว่า Googlebot โดนด้วย
+
+การบล็อกของ Cloudflare มักผูกกับ **User-Agent** ทดสอบเทียบสองตัว:
+
+```bash
+D=DOMAIN.TLD
+curl -s -o /dev/null -w 'curl ธรรมดา: %{http_code}
+' "https://$D/"
+curl -s -o /dev/null -w 'Googlebot  : %{http_code}
+'   -A "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" "https://$D/"
+```
+
+ผลจริงของเคสนี้:
+
+```
+curl ธรรมดา: 403
+Googlebot  : 200      <- ผ่าน
+```
+
+**Googlebot ไม่ได้โดนบล็อก** สิ่งที่โดนคือ user-agent ที่หน้าตาเหมือนบอททั่วไป
+ซึ่งรวมถึง **เครื่องมือเช็ค redirect ออนไลน์** ที่ใช้ UA ชื่อ `ToolBot` ด้วย
+
+👉 **เครื่องมือเช็ค redirect ภายนอกใช้ทดสอบโดเมนที่อยู่หลัง Cloudflare ไม่ได้**
+มันจะรายงาน 403 เสมอ ซึ่งไม่ได้แปลว่า redirect พัง ให้ยิงที่ origin เองแทน:
+
+```bash
+curl -sk --resolve $D:443:SERVER_IP -o /dev/null -w '%{http_code} -> %{redirect_url}
+' "https://$D/"
+```
+
+### ถ้า Googlebot ผ่านแล้วแต่ GSC ยังบอก noindex
+
+หน้า **Live Test** ของ Search Console ไม่ได้ใช้ UA ของ Googlebot แต่ใช้
+**Google Inspection Tool** ซึ่งเป็นคนละตัวและมักโดน WAF บล็อกบ่อยกว่า
+ให้ดู **Security → Events** ใน Cloudflare ว่ามี request จาก Google โดนบล็อกในช่วงเวลาที่ทดสอบไหม
+แล้วเพิ่มข้อยกเว้นให้ ASN ของ Google หรือผ่อน rule ที่ยิงโดน
 
 **แก้:** เข้า Cloudflare zone ของโดเมนนั้น
 
