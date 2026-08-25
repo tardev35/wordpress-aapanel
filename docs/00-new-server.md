@@ -14,9 +14,13 @@
 
 ## 0.1 ลำดับการอ่าน
 
+> **เครื่องที่ไม่มี OS template ของ aaPanel ให้เลือก** (Contabo, DigitalOcean, Vultr
+> หรือ Hostinger ที่เลือก image Ubuntu เปล่า) — ทำ [10-bare-linux](10-bare-linux.md)
+> ให้จบก่อน แล้วค่อยเข้าตารางนี้ที่ข้อ 3
+
 | # | ทำอะไร | อ่าน | เวลา |
 |---|---|---|---|
-| 1 | เช่า VPS + เข้า aaPanel ครั้งแรก | [01 §1.1–1.2](01-provisioning.md) | 15 นาที |
+| 1 | เช่า VPS + เข้า aaPanel ครั้งแรก | [01 §1.1–1.2](01-provisioning.md) · เครื่องเปล่า: [10](10-bare-linux.md) | 15 นาที |
 | 2 | 🔴 **ล็อก panel ทันที** ก่อนทำอย่างอื่น | [02 §2.1](02-hardening.md) | 10 นาที |
 | 3 | ติดตั้ง stack (Nginx/MariaDB/PHP 8.3/Redis) | [01 §1.4–1.7](01-provisioning.md) | 30 นาที |
 | 4 | Swap + sysctl + BBR | [02 §2.2](02-hardening.md) · [03 §3.1](03-tuning.md) | 10 นาที |

@@ -29,6 +29,7 @@
 | [docs/07-troubleshooting.md](docs/07-troubleshooting.md) | ปัญหาที่เคยเจอจริงและวิธีแก้ |
 | [docs/08-decisions.md](docs/08-decisions.md) | บันทึกการตัดสินใจ |
 | [docs/09-static-sites.md](docs/09-static-sites.md) | โฮสต์เว็บ static (Astro) บนเครื่องเดียวกัน |
+| [docs/10-bare-linux.md](docs/10-bare-linux.md) | **Ubuntu เปล่า ๆ → aaPanel** สำหรับเครื่องที่ไม่มี template ให้ + ค่าจูนเมื่อเครื่องใหญ่กว่า 4 vCPU / 16 GB |
 
 ---
 

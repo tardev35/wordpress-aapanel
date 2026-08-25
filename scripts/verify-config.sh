@@ -48,6 +48,27 @@ check "OPcache enabled"       "/www/server/php/$PHPV/etc/php.ini" "^opcache.enab
 check "memory_limit 256M"     "/www/server/php/$PHPV/etc/php.ini" "^memory_limit = 256M"
 
 echo
+echo "-- MariaDB (docs/03 หัวข้อ 3.4) --"
+MYCNF=/etc/my.cnf
+# ค่าพวกนี้ผูกกับเครื่อง 4 vCPU / 16 GB - เครื่องขนาดอื่นดูตารางใน docs/10 หัวข้อ 10.8
+# แล้วแก้ทั้งเอกสารและบรรทัดพวกนี้ให้ตรงกัน
+mycheck() {
+  local key="$1" want="$2"
+  printf "%-34s : " "$key"
+  if [ ! -f "$MYCNF" ]; then echo "ไม่มี $MYCNF"; FAIL=1; return; fi
+  local cur
+  cur=$(grep -E "^[[:space:]]*$key[[:space:]]*=" "$MYCNF" | tail -1 | sed 's/.*=[[:space:]]*//;s/[[:space:]]*$//')
+  if [ -z "$cur" ]; then echo "ไม่ได้ตั้ง (ควรเป็น $want)"; FAIL=1
+  elif [ "$cur" = "$want" ]; then echo "OK ($cur)"
+  else echo "เป็น $cur ควรเป็น $want"; FAIL=1; fi
+}
+mycheck innodb_buffer_pool_size 4096M
+mycheck max_connections 200
+mycheck join_buffer_size 256K
+mycheck table_open_cache 2048
+mycheck query_cache_size 0M
+
+echo
 echo "-- ระบบ (docs/02, docs/03) --"
 check "sysctl BBR"      "/etc/sysctl.d/99-tuning.conf" "tcp_congestion_control = bbr"
 check "Redis maxmemory" "/www/server/redis/redis.conf" "^maxmemory"
