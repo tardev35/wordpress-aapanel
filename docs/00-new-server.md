@@ -26,6 +26,7 @@
 | 8 | SSH hardening + Fail2ban | [02 §2.3–2.4](02-hardening.md) | 15 นาที |
 | 9 | 🔴 **Backup + ทดสอบ restore** | [05 §5.3](05-operations.md) | 40 นาที |
 | 9b | ตั้ง cron ตรวจ+ซ่อมเองทุกคืน (**ตั้งในหน้า Cron ของ panel**) | [05 §5.1b](05-operations.md) | 3 นาที |
+| 9c | 🔴 **ให้เครื่อง stamp ไซต์ใหม่เอง** (`install-site-watcher.sh`) | [05 §5.1c](05-operations.md) · [§0.6](#06--ให้เครื่อง-stamp-ไซต์ใหม่เอง--ข้อที่ห้ามข้ามที่สุดในหน้านี้) | 2 นาที |
 | 10 | เว็บแรก | [06](06-new-site.md) (WordPress) · [09](09-static-sites.md) (static) | 10 นาที |
 
 **ลำดับที่ห้ามสลับ:**
@@ -34,6 +35,10 @@
 - **ข้อ 6 ก่อนข้อ 10** — ถ้าเอาเว็บขึ้นก่อนปิดรู โดเมนที่ชี้มาแล้วแต่ยังไม่ Add site
   จะไปหยิบเว็บอื่นมาแสดง แล้วขยะจะเข้าไปติดใน cache ต่อ (ดู [04 §4.5](04-cache.md))
 - **ข้อ 9 ก่อนรับงานลูกค้าจริง** — backup ที่ไม่เคย restore สำเร็จ ยังไม่นับว่าเป็น backup
+- **ข้อ 9c ก่อนข้อ 10** — เว็บแรกที่ขึ้นก่อนตั้ง watcher จะเปิด auto-update ค้างไว้ และ
+  WordPress อัปตัวเองขึ้นตัวล่าสุดภายในชั่วโมงเดียว (วัดจากเครื่องจริง 2 เครื่อง ดู
+  [§0.6](#06--ให้เครื่อง-stamp-ไซต์ใหม่เอง--ข้อที่ห้ามข้ามที่สุดในหน้านี้)) —
+  ปิดทีหลังไม่ได้ย้อนเวอร์ชันกลับ
 
 ---
 
@@ -61,10 +66,13 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/set-redis-limit.sh"
 # 4) วางไฟล์ถาวรไว้ให้ cron ใช้ (ยังไม่แตะ crontab)
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --no-cron"
 
-# 5) ยืนยัน - ต้องขึ้น "ผ่านทั้งหมด"
+# 5) ให้เครื่อง stamp ไซต์ใหม่เอง  <-- ห้ามข้าม ดู 0.6
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-site-watcher.sh"
+
+# 6) ยืนยัน - ต้องขึ้น "ผ่านทั้งหมด"
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/verify-config.sh"
 
-# 6) ทดสอบว่ารูปิดจริง - ต้องได้ 404
+# 7) ทดสอบว่ารูปิดจริง - ต้องได้ 404
 curl -sk --resolve nosuch.invalid:443:NEW_IP https://nosuch.invalid/ -o /dev/null -w "%{http_code}"
 ```
 
@@ -72,11 +80,7 @@ curl -sk --resolve nosuch.invalid:443:NEW_IP https://nosuch.invalid/ -o /dev/nul
 (Daily · **16:00** เพราะเครื่องเป็น UTC · Script content = `/root/wpaa/scripts/nightly-check.sh`)
 รายละเอียดและกับดักเรื่องเวลาอยู่ที่ [05 §5.1b](05-operations.md)
 
-**ทุกครั้งที่เพิ่มเว็บหลังจากนี้:**
-
-```powershell
-ssh root@NEW_IP "/root/stamp-site.sh DOMAIN.TLD"
-```
+**หลังข้อ 5 ทีมงานกด Add site ในแผงได้เลย ไม่ต้องสั่งอะไรต่อ** — ดูเหตุผลใน 0.6
 
 ---
 
@@ -142,14 +146,38 @@ ssh root@SERVER_IP "/etc/init.d/nginx reload"
 
 ---
 
-## 0.6 ทุกครั้งที่เพิ่มเว็บหลังจากนี้
+## 0.6 🔴 ให้เครื่อง stamp ไซต์ใหม่เอง — ข้อที่ห้ามข้ามที่สุดในหน้านี้
+
+```powershell
+ssh root@SERVER_IP "bash /tmp/wpaa/scripts/install-site-watcher.sh"
+```
+
+ได้ systemd 2 ตัวที่เรียก [`watch-new-sites.sh`](../scripts/watch-new-sites.sh) ให้เอง
+(`wpaa-newsite.path` ตื่นตอน panel เขียน vhost · `wpaa-newsite.timer` ยิงทุก 1 นาที)
+รายละเอียดใน [05 §5.1c](05-operations.md)
+
+### ทำไมข้อนี้ถึงสำคัญกว่าที่หน้าตามันดู
+
+เอกสารรุ่นก่อนเขียนไว้ว่า "ทุกครั้งที่เพิ่มเว็บ ให้รัน `stamp-site.sh DOMAIN`"
+**คำสั่งนั้นไม่เคยถูกรันจริง** เพราะทีมที่กด Add site ไม่ได้ใช้ cmd/ssh ผลที่ตามมา
+วัดได้จากเครื่องจริง 2 เครื่องในวันเดียวกัน:
+
+| เครื่อง | สภาพตอนเข้าไปดู |
+|---|---|
+| `187.52.125.203` | ลง `6.7.7` ตอน 00:04 · WordPress อัปตัวเองเป็น `7.1` ตอน **01:08** |
+| `187.52.122.249` | เพิ่มเว็บ 26 ตัวตอนเช้า · **ทั้ง 26 ตัวขึ้น 7.1 หมด** ก่อน cron รอบ 23:00 จะมาถึง · `enable-php-83-wpfastcgi.conf` โดน WP Toolkit เขียนทับเป็นฉบับโรงงานไปด้วย |
+
+ทางแก้ที่จบด้วยประโยค "แล้วให้รันคำสั่งนี้ด้วย" ไม่ใช่ทางแก้ — มันย้ายงานไปวางบนคนที่
+ทำไม่ได้ แล้วรอให้หลุดอีกรอบ **ติดตั้ง watcher คือสิ่งที่ทำให้ประโยคนั้นไม่จำเป็น**
+
+### `stamp-site.sh` ยังเรียกเองได้อยู่
 
 ```powershell
 ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
 ```
 
-ไม่ใช่ทางเลือก — ตัว `reload` ในสคริปต์คือสิ่งที่ปิดช่วงหน้าต่างที่โดเมนใหม่ไปหยิบเว็บคนอื่น
-([06 §6.1](06-new-site.md))
+เก็บไว้ใช้ตอนไล่แก้ปัญหาเฉพาะหน้า และเป็นตัวงานที่ watcher เรียกใช้ —
+แต่ไม่ใช่ขั้นตอนที่คนต้องทำประจำอีกแล้ว ([06 §6.1](06-new-site.md))
 
 ---
 

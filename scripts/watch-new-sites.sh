@@ -5,6 +5,11 @@
 #   wpaa-newsite.path   ตื่นทันทีที่ panel เขียน vhost = วินาทีที่กด Add site
 #   wpaa-newsite.timer  ยิงทุก 1 นาที เป็นตาข่าย และเป็นตัวที่ทัน wp-config.php ซึ่งโผล่ทีหลัง
 #
+# ซ่อม 3 อย่าง ทั้งหมดคือของที่ WP Toolkit ทำพังตอนเพิ่มไซต์:
+#   0. enable-php-83-wpfastcgi.conf ถูกเขียนทับเป็นฉบับโรงงาน
+#   1. ไซต์ใหม่ยังไม่มีกฎกลาง (00-common.conf) และ nginx ยังไม่ reload
+#   2. ไซต์ใหม่เปิด auto-update ของ WordPress ค้างไว้
+#
 # เรียกมือก็ได้ ปลอดภัย เพราะมันไม่แตะอะไรถ้าไม่มีอะไรต้องแก้:
 #
 #   ssh root@SERVER_IP "/root/wpaa/scripts/watch-new-sites.sh"
@@ -31,6 +36,9 @@ STAMP=/root/stamp-site.sh
 AUTOUPD=/root/wpaa/scripts/set-wp-autoupdate.sh
 CLEARCACHE=/root/wpaa/scripts/clear-cache.sh
 CONST=AUTOMATIC_UPDATER_DISABLED
+CANON=/root/wpaa/configs/enable-php-83-wpfastcgi.conf
+LIVE=/www/server/nginx/conf/enable-php-83-wpfastcgi.conf
+NGINX=/www/server/nginx/sbin/nginx
 LOG=/var/log/wpaa-newsite.log
 LOG_KEEP=2000
 
@@ -41,6 +49,37 @@ log() { echo "$(date '+%F %T %Z') $*" >> "$LOG"; }
 acted=0
 
 [ -x "$STAMP" ] || { log "!! ไม่มี $STAMP - รัน harden-nginx.sh ก่อน"; exit 1; }
+
+# ---------- 0. คอนฟิก FastCGI cache ที่ WP Toolkit เขียนทับทุกครั้งที่เพิ่มไซต์ ----------
+#
+# ตรรกะเดียวกับ nightly-check.sh ข้อ 1 แต่มาอยู่ตรงนี้เพราะ path unit ตื่นตอน panel
+# เขียน vhost ซึ่งเป็น "จังหวะเดียวกัน" กับที่ WP Toolkit ทับไฟล์นี้พอดี รอถึงรอบกลางคืน
+# แปลว่าเว็บทั้งเครื่องวิ่งด้วยฉบับโรงงานได้นานสุด 23 ชั่วโมง (เกิดจริงบน 187.52.122.249
+# เมื่อ 2026-08-25: เพิ่มเว็บชุดใหญ่ตอนเช้า ไฟล์เป็นฉบับโรงงานยาวถึงเที่ยง)
+#
+# ต่างจาก nightly-check.sh ตรงที่ **ถ้า nginx -t ไม่ผ่านจะเอาของเดิมกลับ** ไม่ใช่แค่ไม่ reload
+# เพราะตัวนี้ยิงทุกนาที ถ้าปล่อยไฟล์ที่ nginx -t ไม่ผ่านค้างไว้ reload ครั้งถัดไป
+# ไม่ว่าจะมาจากใคร (panel ต่ออายุ SSL, stamp-site.sh) จะพังตามไปด้วย
+if [ -f "$CANON" ] && [ -f "$LIVE" ] && ! diff -q "$CANON" "$LIVE" >/dev/null 2>&1; then
+  acted=1
+  bak="$LIVE.bak-auto-$(date +%F-%H%M%S)"
+  cp -p "$LIVE" "$bak"
+  install -m 644 "$CANON" "$LIVE"
+  if "$NGINX" -t >/dev/null 2>&1; then
+    /etc/init.d/nginx reload >/dev/null 2>&1
+    # ต้องล้างแคชด้วย เพราะของที่ค้างอยู่ถูกเก็บตอนกฎยังเป็นอีกแบบ
+    # (ฉบับโรงงานเก็บ 200 ไว้ 1 วัน และแนบ Cache-Control: max-age=0 ไปให้เบราว์เซอร์)
+    CACHE=$(grep -oP 'fastcgi_cache_path\s+\K[^ ]+' "$VHOST/0.fastcgi_cache.conf" 2>/dev/null)
+    CACHE=${CACHE:-/www/server/fastcgi_cache}
+    n=$(find "$CACHE" -type f 2>/dev/null | wc -l)
+    rm -rf "${CACHE:?}"/* 2>/dev/null
+    log "[แก้] enable-php-83-wpfastcgi.conf ถูกเขียนทับ - กู้กลับ reload แล้ว ล้างแคช $n ไฟล์"
+  else
+    cp -p "$bak" "$LIVE"
+    log "[ล้มเหลว] กู้ config แล้ว nginx -t ไม่ผ่าน - เอาของเดิมกลับ ไม่ได้ reload"
+    "$NGINX" -t >> "$LOG" 2>&1
+  fi
+fi
 
 for dir in /www/wwwroot/*/; do
   d=$(basename "$dir")

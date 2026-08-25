@@ -169,6 +169,11 @@ ssh root@SERVER_IP "bash /tmp/wpaa/scripts/install-site-watcher.sh"
 `wp-config.php` ของ WordPress ไปโผล่**ข้างใน** `/www/wwwroot/<domain>/` ซึ่งไม่ทำให้
 โฟลเดอร์ที่เฝ้าอยู่เปลี่ยน `path` unit จึงมองไม่เห็น ต้องให้ timer เก็บ
 
+> ⚠️ ตอนทีมเพิ่มเว็บทีละหลายสิบตัว WP Toolkit จะทับ `enable-php-83-wpfastcgi.conf`
+> **ทุกไซต์ที่เพิ่ม** watcher จึงกู้ + ล้างแคชทั้งเครื่องซ้ำหลายรอบในช่วงนั้น
+> แคชที่อุ่นอยู่จะโดนล้างทิ้งเป็นระยะจนกว่าจะเพิ่มเสร็จ — ยอมแลก เพราะทางเลือกอีกทาง
+> คือปล่อยให้ทั้งเครื่องวิ่งด้วยฉบับโรงงานยาวถึงรอบ 23:00
+
 ### ทำไมรอบกลางคืนอย่างเดียวไม่พอ
 
 `login-edo89.com` บนเครื่อง `187.52.125.203` — **ลง `6.7.7` ถูกต้องตามที่เลือก** แต่:
@@ -190,6 +195,7 @@ panel เขียนทับ และกรณีที่เครื่อ�
 
 | เจอ | ทำ |
 |---|---|
+| `enable-php-83-wpfastcgi.conf` ต่างจากต้นฉบับใน `/root/wpaa/configs/` | สำรอง กู้ฉบับที่จูนแล้วกลับ reload แล้วล้างแคชทั้งเครื่อง — **ถ้า `nginx -t` ไม่ผ่านจะเอาของเดิมกลับ** |
 | โฟลเดอร์ใน `/www/wwwroot/` ที่**ไม่มี** `vhost/nginx/<domain>.conf` | ข้าม — ไม่ใช่ไซต์ที่ panel สร้าง |
 | ไซต์ที่ไม่มี `extension/<domain>/00-common.conf` | รัน `stamp-site.sh` (กฎ www + ปิด auto-update + reload) แล้วล้างแคชของโดเมนนั้น |
 | ไซต์ที่ stamp แล้ว แต่ `wp-config.php` ยังไม่มี `AUTOMATIC_UPDATER_DISABLED` | รัน `set-wp-autoupdate.sh` อย่างเดียว **ไม่ reload nginx ซ้ำ** |
@@ -205,6 +211,8 @@ panel เขียนทับ และกรณีที่เครื่อ�
 | `rm` symlink `00-common.conf` | `timer` | 02:49:59 | 02:50:09 → `stamped:` | **10 วินาที** |
 | ถอด `AUTOMATIC_UPDATER_DISABLED` ด้วย `set-wp-autoupdate.sh --revert` | `timer` | 02:50:46 | 02:51:09 → `ปิดแล้ว` | **23 วินาที** |
 | `rm` symlink พร้อมแตะโฟลเดอร์ `vhost/nginx/` (จำลองตอนกด Add site) | `path` | 03:11:14.194 | 03:11:14.231 → `stamped:` | **37 มิลลิวินาที** |
+| เติมบรรทัดใน `enable-php-83-wpfastcgi.conf` (1 ไซต์) | `path` | 06:23:09.720 | 06:23:09.743 → กู้ + ล้างแคช 9 ไฟล์ | **23 มิลลิวินาที** |
+| เติมบรรทัดใน `enable-php-83-wpfastcgi.conf` (**71 ไซต์**) | `path` | 06:23:29.238 | 06:23:29.254 → กู้ + ล้างแคช 118 ไฟล์ | **16 มิลลิวินาที** |
 
 ทุกรอบ `nginx -t` ผ่านก่อน reload · `wp-config.php` กลับมาเป็น `640 www:www` · เว็บตอบ 200
 

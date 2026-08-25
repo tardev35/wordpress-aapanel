@@ -76,6 +76,30 @@ done
 if [ -z "$WPMISS" ]; then echo "OK"; else echo "ยังเปิดอยู่ ->$WPMISS (รัน set-wp-autoupdate.sh)"; FAIL=1; fi
 
 echo
+echo "-- งานอัตโนมัติ (docs/05) --"
+
+# ตรวจว่า "มีอยู่และยังเป็นอยู่" ไม่ใช่แค่ "เคยติดตั้ง" - unit ที่ถูก disable ไว้
+# จะเงียบเหมือนตอนทำงานปกติทุกอย่าง เพราะสคริปต์มันไม่เขียน log ตอนไม่มีอะไรทำ
+for u in wpaa-newsite.path wpaa-newsite.timer; do
+  printf "%-34s : " "$u"
+  if ! systemctl list-unit-files "$u" >/dev/null 2>&1 || [ -z "$(systemctl list-unit-files "$u" --no-legend 2>/dev/null)" ]; then
+    echo "ยังไม่ได้ติดตั้ง -> รัน install-site-watcher.sh"; FAIL=1
+  elif [ "$(systemctl is-active "$u" 2>/dev/null)" = "active" ]; then
+    echo "OK"
+  else
+    echo "ติดตั้งแล้วแต่ไม่ทำงาน -> systemctl enable --now $u"; FAIL=1
+  fi
+done
+
+printf "%-34s : " "nightly-check ตั้ง cron ไว้"
+NCRON=$( { crontab -l 2>/dev/null; cat /www/server/cron/* 2>/dev/null; } | grep -c "nightly-check.sh" )
+if [ "$NCRON" = "0" ]; then
+  echo "ไม่มีเลย -> ดู 05 §5.1b"; FAIL=1
+else
+  echo "OK ($NCRON จุด)"
+fi
+
+echo
 if [ "$FAIL" = "0" ]; then
   echo "ผ่านทั้งหมด"
 else
