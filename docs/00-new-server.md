@@ -73,6 +73,10 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-site-watcher.sh"
 # 5b) ให้ปุ่ม Purge ในหน้า WP ล้างแคชได้จริง (ดู 04 §4.7)
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/fix-cache-purge.sh"
 
+# 5c) แก้ IP ที่หัว panel ให้ตรงเครื่อง - image ของ Hostinger ติดค่าของเครื่องอื่นมา
+#     ถ้าปล่อยไว้ คนจะก๊อป IP ผิดไปรันคำสั่งผิดเครื่อง (ดู 07 ข้อ 18)
+ssh root@NEW_IP "F=/www/server/panel/data/iplist.txt; mkdir -p /root/wpaa/backups; cp -p \$F /root/wpaa/backups/ 2>/dev/null; printf '%s' \$(ip -4 addr show scope global | grep -oP 'inet \K[0-9.]+' | head -1) > \$F; cat \$F"
+
 # 6) ยืนยัน - ต้องขึ้น "ผ่านทั้งหมด"
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/verify-config.sh"
 

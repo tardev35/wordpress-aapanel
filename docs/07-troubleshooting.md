@@ -595,6 +595,57 @@ ssh root@SERVER_IP "bash /root/wpaa/scripts/clear-cache.sh DOMAIN"   # ล้า
 
 ---
 
+### 18. หัว panel โชว์ IP ของเครื่องอื่น
+
+**อาการ:** เปิด aaPanel ที่ `https://187.52.125.203:PORT` แต่หัวหน้า Home โชว์
+`89.116.52.173` ซึ่งไม่ใช่ IP ของเครื่องนี้เลย
+
+**นี่ไม่ใช่เรื่องความสวยงาม** — หัว panel เป็นที่แรกที่คนมองเวลาจะยืนยันว่า "ตอนนี้อยู่บน
+เครื่องไหน" ถ้ามันโชว์ IP ของเครื่องอื่น มีโอกาสที่คนจะก๊อป IP นั้นไปรันคำสั่งผิดเครื่อง
+
+**สาเหตุ:** aaPanel เก็บ IP ไว้ในไฟล์เดียว `/www/server/panel/data/iplist.txt` และ
+`GetLocalIp()` จะไปถาม `ifconfig.me` ใหม่**ก็ต่อเมื่อไฟล์นั้นว่าง**เท่านั้น:
+
+```python
+filename = 'data/iplist.txt'
+ipaddress = readFile(filename)
+if not ipaddress:                    # <-- ถามใหม่เฉพาะตอนไฟล์ว่าง
+    url = 'https://ifconfig.me/ip'
+```
+
+ค่าผิดจึงไม่มีวันแก้ตัวเอง — และบนเครื่องที่เช่าจาก Hostinger ค่านี้ติดมากับ image
+**เจอค่าเดียวกัน (`89.116.52.173`) บนทั้ง 2 เครื่อง** ลงวันที่เดียวกันคือวันสร้าง image
+เครื่องใหม่ทุกเครื่องจึงน่าจะเป็นแบบนี้หมด
+
+**แก้:**
+
+```bash
+F=/www/server/panel/data/iplist.txt
+REAL=$(ip -4 addr show scope global | grep -oP 'inet \K[0-9.]+' | head -1)
+cp -p "$F" "/root/wpaa/backups/iplist.txt.bak-$(date +%F-%H%M%S)"
+printf '%s' "$REAL" > "$F"
+chown root:root "$F"; chmod 600 "$F"
+```
+
+แล้ว **refresh หน้า panel** (F5) · ถ้ายังไม่เปลี่ยน `/etc/init.d/bt restart`
+(รีแค่ตัว panel เว็บลูกค้าไม่กระทบ)
+
+**ยืนยันด้วยฟังก์ชันของ panel เอง ไม่ใช่แค่ดูไฟล์:**
+
+```bash
+cd /www/server/panel && ./pyenv/bin/python3 -c "
+import sys; sys.path.insert(0,'class')
+from public import get_ip
+print(get_ip())"
+```
+
+> ถ้าไม่อยากใส่ค่าเอง ลบไฟล์ทิ้งก็ได้ — panel จะไปถาม `ifconfig.me` ใหม่แล้วเขียนกลับ
+> แต่แบบนั้นต้องให้เครื่องออกเน็ตได้ตอนนั้นพอดี การเขียนค่าตรง ๆ ไม่พึ่งอะไรเลย
+>
+> `verify-config.sh` มีด่าน **`IP ที่หัว panel`** ตรวจให้แล้ว
+
+---
+
 ## 📌 กฎที่สรุปได้จากปัญหาทั้งหมด
 
 1. **สำรองก่อนแก้เสมอ** — `cp <file> <file>.bak-$(date +%F)`

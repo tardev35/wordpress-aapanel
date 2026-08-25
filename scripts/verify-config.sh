@@ -91,6 +91,19 @@ for u in wpaa-newsite.path wpaa-newsite.timer; do
   fi
 done
 
+# ไม่ใช่เรื่องความสวยงาม - หัวหน้า panel เป็นที่แรกที่คนมองเวลาจะยืนยันว่า
+# "กำลังอยู่บนเครื่องไหน" ถ้ามันโชว์ IP ของเครื่องอื่น คนจะก๊อป IP นั้นไปรันคำสั่งผิดเครื่อง
+printf "%-34s : " "IP ที่หัว panel"
+PIP=$(cat /www/server/panel/data/iplist.txt 2>/dev/null | tr -d '[:space:]')
+RIP=$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -1)
+if [ -z "$PIP" ]; then
+  echo "ว่าง - panel จะไปถาม ifconfig.me เอง"
+elif [ "$PIP" = "$RIP" ]; then
+  echo "OK ($RIP)"
+else
+  echo "ไม่ตรง: panel=$PIP เครื่องจริง=$RIP -> ดู 07 ข้อ 18"; FAIL=1
+fi
+
 printf "%-34s : " "ปุ่ม Purge ใช้ได้ (open_basedir)"
 PURGEMISS=""
 for c in /www/wwwroot/*/wp-config.php; do
