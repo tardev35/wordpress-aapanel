@@ -109,6 +109,7 @@ done
 ## 🔴 งานที่ยังค้าง (ยืนยันจากเครื่องอ้างอิง เมื่อ 2026-08-23)
 
 - [ ] **ตั้ง cron ตรวจ+ซ่อมอัตโนมัติ** — `scripts/install-autoheal.sh` ([05 §5.1b](docs/05-operations.md))
+- [ ] **ตั้ง watcher stamp ไซต์ใหม่** — `scripts/install-site-watcher.sh` ([05 §5.1c](docs/05-operations.md)) · ทำแล้วบน `187.52.125.203`
 - [ ] **ล็อก panel** — ยังเป็นพอร์ต `8888` ต้องเปลี่ยนพอร์ต + security entrance + password
 - [ ] **ตั้ง Backup + ทดสอบ restore** — ยังไม่มี backup เลยแม้แต่ชุดเดียว
 - [ ] SSH: ปิด password login (คีย์ใช้ได้แล้ว แต่ password ยังเปิดอยู่)
@@ -139,7 +140,7 @@ done
 1. **ใช้ `/etc/init.d/<service>` หรือ GUI ไม่ใช้ `systemctl`** — aaPanel รัน service ผ่าน init.d ทำให้ `systemctl` รายงานสถานะไม่ตรงความจริง (nginx, php-fpm, redis)
 2. **ห้ามใช้ `sed -i` กับไฟล์ config** — เคยทำ php-fpm พังจนเว็บล่ม ใช้ aaPanel GUI แทน
 3. **กฎ nginx ที่เราเขียนเอง ให้ไปอยู่ใน `extension/<domain>/`** ไม่ใช่แก้ vhost ตรง ๆ — vhost โดน panel เขียนทับได้ทุกครั้งที่ต่ออายุ SSL หรือเปลี่ยน setting แต่โฟลเดอร์ `extension/` ไม่โดน (ดู [08-decisions ADR-010](docs/08-decisions.md))
-4. **หลังกด Add site ในแผง ต้องรัน `stamp-site.sh <domain>` เสมอ** — ไม่ใช่แค่ใส่กฎกลาง แต่ตัว reload คือสิ่งที่ปิดช่วงหน้าต่างที่โดเมนใหม่ไปหยิบเว็บของคนอื่นมาแสดง (ดู [07-troubleshooting ข้อ 10–11](docs/07-troubleshooting.md))
+4. **หลังกด Add site ต้องมี `stamp-site.sh` วิ่ง** — ไม่ใช่แค่ใส่กฎกลาง แต่ตัว reload คือสิ่งที่ปิดช่วงหน้าต่างที่โดเมนใหม่ไปหยิบเว็บของคนอื่นมาแสดง (ดู [07-troubleshooting ข้อ 10–11](docs/07-troubleshooting.md)) · **เครื่องที่ตั้ง `install-site-watcher.sh` แล้วรันให้เองภายในเสี้ยววินาที ทีมงานกด Add site อย่างเดียวจบ** ([05 §5.1c](docs/05-operations.md)) · เครื่องที่ยังไม่ได้ตั้งต้องรันเอง
 5. **ตรวจ syntax ก่อน start/reload ทุกครั้ง**
    ```bash
    /www/server/php/83/sbin/php-fpm -t -y /www/server/php/83/etc/php-fpm.conf
@@ -195,16 +196,18 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`verify-config.sh`](scripts/verify-config.sh) | เช็คว่าค่าที่เอกสารอ้างยังอยู่ไหม | scp หรือ cmd /c |
 | [`healthcheck.sh`](scripts/healthcheck.sh) | สถานะ service ตอนนี้ | scp หรือ cmd /c |
 | [`clear-cache.sh`](scripts/clear-cache.sh) | ล้าง FastCGI cache — ทั้งเครื่อง หรือใส่โดเมนเพื่อล้างไซต์เดียว | scp หรือ cmd /c |
-| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + ปิด auto-update + reload · **ทุกครั้งหลัง Add site** | `/root/stamp-site.sh` (มีอยู่บนเครื่องแล้ว) |
+| [`stamp-site.sh`](scripts/stamp-site.sh) | ใส่กฎกลาง + ปิด auto-update + reload · watcher เรียกให้เองแล้ว | `/root/stamp-site.sh` (มีอยู่บนเครื่องแล้ว) |
 | [`set-redis-limit.sh`](scripts/set-redis-limit.sh) | `maxmemory` + `maxmemory-policy` พร้อม restart | scp หรือ cmd /c |
 | [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
+| [`install-site-watcher.sh`](scripts/install-site-watcher.sh) | ตั้ง path+timer ให้ stamp ไซต์ใหม่เอง ไม่ต้องมีคนสั่ง · **ครั้งเดียวต่อเครื่อง** (`--remove` ถอด) | **ต้อง `scp`** |
 | [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |
 | [`check-wp-versions.sh`](scripts/check-wp-versions.sh) | ดูว่าแต่ละไซต์ได้ WP เวอร์ชันอะไร และมาจากแพ็กเกจไหน | scp หรือ cmd /c |
 | [`fix-noindex.sh`](scripts/fix-noindex.sh) | หา/ปลดไซต์ที่ตั้ง noindex ไว้ (`--apply` แก้จริง) + ล้างแคชให้ | scp หรือ cmd /c |
 | [`nightly-check.sh`](scripts/nightly-check.sh) | ตัวงานที่ cron เรียก — ไม่ต้องรันเอง | cron เรียกให้ |
+| [`watch-new-sites.sh`](scripts/watch-new-sites.sh) | ตัวงานที่ path/timer เรียก — ไม่ต้องรันเอง | systemd เรียกให้ |
 
 > `fix-permissions.sh` ส่งทาง stdin ไม่ได้ เพราะมันถามยืนยันก่อนแก้ — พอตัวสคริปต์เองมาทาง stdin
 > คำถามจะอ่านค่าไม่ได้แล้วตอบ "ยกเลิก" ทันที ต้อง `scp` แล้วรันบนเครื่องเท่านั้น

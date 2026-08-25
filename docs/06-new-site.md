@@ -81,12 +81,17 @@ ssh root@SERVER_IP "bash /root/wpaa/scripts/check-wp-versions.sh"
 
 | ชั้น | ปิดให้เมื่อไหร่ |
 |---|---|
-| `stamp-site.sh` (รันเองหลัง Add site) | **ทันที** |
-| `nightly-check.sh` (cron 23:00) | ตาข่ายรับกรณีที่คนลืม stamp |
+| `wpaa-newsite.timer` เรียก `watch-new-sites.sh` | **ไม่เกิน 1 นาที** หลัง `wp-config.php` โผล่ — อัตโนมัติ ไม่ต้องมีคนสั่ง |
+| `nightly-check.sh` (cron 23:00) | ตาข่ายชั้นสุดท้าย เผื่อ timer ถูกปิด |
+| `stamp-site.sh` (รันเอง) | ทันที — ไว้ใช้ตอนแก้ปัญหาเฉพาะหน้า ไม่ใช่ขั้นตอนประจำแล้ว |
+
+> ชั้นบนเพิ่งเพิ่มเพราะชั้นกลางช้าเกินไปจริง ๆ — `login-edo89.com` ลง `6.7.7` ตอน 00:04
+> แล้ว WordPress อัปตัวเองเป็น `7.1` ตอน **01:08** ส่วน cron รอบ 23:00 ยังอีก 22 ชั่วโมง
+> ดู [05 §5.1c](05-operations.md)
 
 ปิดเองทันทีก็ได้ถ้าอยาก: `ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-autoupdate.sh"`
 
-### 🔴 แล้วรัน `stamp-site.sh` ทันที — ข้ามไม่ได้
+### `stamp-site.sh` — ตอนนี้เครื่องรันให้เองแล้ว
 
 ```bash
 ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
@@ -111,6 +116,14 @@ ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
 
 > ถ้ายังไม่เคยรัน [`scripts/harden-nginx.sh`](../scripts/harden-nginx.sh) บนเครื่องนั้น
 > ให้ทำก่อน 1 ครั้ง ไม่งั้น `stamp-site.sh` จะหา `common-site.conf` ไม่เจอ
+
+**บนเครื่องที่ตั้ง [`install-site-watcher.sh`](../scripts/install-site-watcher.sh) แล้ว
+ไม่ต้องรันคำสั่งนี้เอง** — `wpaa-newsite.path` ตื่นตอนที่ panel เขียน vhost แล้วรัน
+`stamp-site.sh` ให้ภายในเสี้ยววินาที (วัดได้ 37 มิลลิวินาที) ทีมงาน**กด Add site ในแผง
+อย่างเดียวจบ** ไม่ต้องเปิด cmd
+
+คำสั่งข้างบนเก็บไว้สำหรับ 2 กรณี: เครื่องที่ยังไม่ได้ตั้ง watcher และตอนไล่แก้ปัญหาเฉพาะหน้า
+ตรวจว่าเครื่องนี้ตั้งแล้วหรือยังด้วย `systemctl status wpaa-newsite.path`
 
 ---
 
@@ -199,7 +212,7 @@ WP Toolkit มีฟีเจอร์ **Clone site** ที่สร้าง�
 
 ### ความปลอดภัย
 - [ ] **auto-update ถูกปิด** — `grep AUTOMATIC_UPDATER_DISABLED wp-config.php`
-      (ถ้ายังไม่มี รัน `set-wp-autoupdate.sh` หรือรอ cron รอบกลางคืน)
+      (ถ้ายังไม่มี รัน `set-wp-autoupdate.sh` หรือรอ `wpaa-newsite.timer` อีกไม่เกิน 1 นาที)
 - [ ] `wp-config.php` permission = **640**
   ```bash
   chmod 640 /www/wwwroot/DOMAIN.TLD/wp-config.php
