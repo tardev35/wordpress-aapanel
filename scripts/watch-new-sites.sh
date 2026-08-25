@@ -9,6 +9,7 @@
 #   0. enable-php-83-wpfastcgi.conf ถูกเขียนทับเป็นฉบับโรงงาน
 #   1. ไซต์ใหม่ยังไม่มีกฎกลาง (00-common.conf) และ nginx ยังไม่ reload
 #   2. ไซต์ใหม่เปิด auto-update ของ WordPress ค้างไว้
+#   3. ไซต์ใหม่ล้างแคชจากหน้า WP ไม่ได้ เพราะ open_basedir กั้น PHP ไว้ (fix-cache-purge.sh)
 #
 # เรียกมือก็ได้ ปลอดภัย เพราะมันไม่แตะอะไรถ้าไม่มีอะไรต้องแก้:
 #
@@ -35,6 +36,8 @@ EXT="$VHOST/extension"
 STAMP=/root/stamp-site.sh
 AUTOUPD=/root/wpaa/scripts/set-wp-autoupdate.sh
 CLEARCACHE=/root/wpaa/scripts/clear-cache.sh
+FIXPURGE=/root/wpaa/scripts/fix-cache-purge.sh
+CACHEDIR=/www/server/fastcgi_cache
 CONST=AUTOMATIC_UPDATER_DISABLED
 CANON=/root/wpaa/configs/enable-php-83-wpfastcgi.conf
 LIVE=/www/server/nginx/conf/enable-php-83-wpfastcgi.conf
@@ -107,6 +110,24 @@ for dir in /www/wwwroot/*/; do
       log "  !! ไม่สำเร็จ | $(echo "$out" | tr '\n' '|')"
     fi
     continue
+  fi
+
+  # ---------- ปุ่ม Purge ในหน้า WP ต้องล้างแคชได้จริง ----------
+  #
+  # aaPanel ใส่ .user.ini ล็อก open_basedir ให้ PHP อยู่แต่ในโฟลเดอร์ไซต์ตัวเอง
+  # ปลั๊กอิน Nginx Helper จึงลบไฟล์ใน /www/server/fastcgi_cache ไม่ได้ ปุ่มกดแล้วเงียบ
+  # ไม่มี error ให้เห็น ทีมจึงกดซ้ำแล้วสรุปว่า "แคชมันดื้อ" (เจอจริง 2026-08-25)
+  #
+  # เช็คถูก ๆ ตรงนี้ก่อน แล้วค่อยเรียกสคริปต์เต็มเฉพาะไซต์ที่ยังขาด เพราะตัวนั้น
+  # ต้องต่อ MySQL ทีละไซต์ ไม่คุ้มจะเรียกทุกนาที
+  # ต้องมี wp-config.php ด้วย - ไซต์ static (docs/09) ไม่มีปลั๊กอินให้ล้างแคช
+  # และ fix-cache-purge.sh ก็ข้ามมันอยู่แล้ว ถ้าไม่กันตรงนี้จะวนเรียกทุกนาทีไม่จบ
+  # (เจอจริงกับ sclass88-member.com ซึ่งเป็นเว็บ Astro)
+  ini="$dir/.user.ini"
+  if [ -x "$FIXPURGE" ] && [ -f "$dir/wp-config.php" ] && [ -f "$ini" ] && ! grep -q "$CACHEDIR" "$ini"; then
+    acted=1
+    log "ไซต์ $d - open_basedir ยังกั้นโฟลเดอร์แคช ปุ่ม Purge ในหน้า WP จะใช้ไม่ได้"
+    log "  $("$FIXPURGE" "$d" 2>&1 | grep -- "$d" || echo '(ไม่มีผลลัพธ์)')"
   fi
 
   # ---------- stamp แล้ว แต่ WordPress เพิ่งมาลงทีหลัง ----------

@@ -539,6 +539,62 @@ bash /root/wpaa/scripts/clear-cache.sh
 
 ---
 
+### 17. กดปุ่ม Purge ในหน้า WP แล้วแคชไม่หาย (เงียบสนิท ไม่มี error)
+
+**อาการ:** แก้หน้าเว็บแล้วกด Update / กด Purge Cache แต่คนทั่วไปยังเห็นของเก่า
+ตัวเองเห็นของใหม่เพราะ **login อยู่** (คุกกี้ `wordpress_logged_in` อยู่ใน `$skip_cache`)
+
+**ตัวแยกโรค — เทียบหน้าที่ผ่านแคชกับหน้าสด:**
+
+```bash
+D=DOMAIN.TLD
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/"          | grep -o '<h1[^>]*>.\{0,80\}'
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/?nocache=1" | grep -o '<h1[^>]*>.\{0,80\}'
+```
+
+ถ้าอันล่างถูก อันบนผิด = **บันทึกสำเร็จแล้ว ติดที่แคชล้วน ๆ** ไม่ต้องไปไล่หาว่าลืมกด Update
+
+**สาเหตุ:** Purge Method ของ Nginx Helper ตันทั้งสองทางบนเครื่องที่ตั้งตามคู่มือนี้ —
+`GET request` โดน `deny all` เพราะคำขอวนออกไปเจอ Cloudflare แล้วกลับมาด้วย IP อื่น
+ส่วน `Delete local server cache files` โดน `open_basedir` ของ `.user.ini` กั้น
+อธิบายเต็มใน [04 §4.7](04-cache.md)
+
+**ยืนยันสาเหตุด้วยการให้ PHP ของไซต์นั้นพูดเอง:**
+
+```bash
+D=DOMAIN.TLD
+F=$(grep -rlaE "^KEY: httpsGET${D}/$" /www/server/fastcgi_cache | head -1)
+cat > /www/wwwroot/$D/probe.php <<PHP
+<?php \$f='$F';
+echo ini_get('open_basedir')."
+";
+echo (@file_exists(\$f)?'เห็นไฟล์':'ไม่เห็นไฟล์')."
+";
+PHP
+chown www:www /www/wwwroot/$D/probe.php
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/probe.php?x=1"
+rm -f /www/wwwroot/$D/probe.php      # 🔴 ลบทิ้งทุกครั้ง อย่าทิ้งไว้ใน web root
+```
+
+ถ้าได้ `open_basedir restriction in effect` = ใช่เคสนี้
+
+**แก้:**
+
+```powershell
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh"      # ให้ปุ่มใช้ได้ถาวร
+ssh root@SERVER_IP "bash /root/wpaa/scripts/clear-cache.sh DOMAIN"   # ล้างของที่ค้างอยู่ตอนนี้
+```
+
+**ถ้ายังไม่หายหลังจากนั้น** = ค้างที่ Cloudflare ไม่ใช่ที่เครื่อง แยกชั้นจาก response header
+ในเบราว์เซอร์ (DevTools → Network):
+
+| เห็น | ค้างที่ | ล้างที่ |
+|---|---|---|
+| `cf-cache-status: HIT` | Cloudflare | Cloudflare → Caching → Purge Everything |
+| `x-cache: HIT` แต่เนื้อหาเก่า | เครื่องเรา | `clear-cache.sh DOMAIN` |
+
+---
+
 ## 📌 กฎที่สรุปได้จากปัญหาทั้งหมด
 
 1. **สำรองก่อนแก้เสมอ** — `cp <file> <file>.bak-$(date +%F)`

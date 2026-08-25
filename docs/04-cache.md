@@ -214,6 +214,9 @@ bash /root/wpaa/scripts/clear-cache.sh DOMAIN.TLD      # เฉพาะไซ�
 **การเปลี่ยน setting ไม่ทริกเกอร์มัน** — เคสจริงคือปลด `noindex` แล้วหน้าเว็บยังส่ง
 `noindex` ต่ออีกเป็นชั่วโมงเพราะไม่มีใครล้างให้ (ดู [07 ข้อ 16](07-troubleshooting.md))
 
+**และถ้าตั้ง Purge Method ผิด มันจะไม่ล้างเลยแม้แต่กรณีที่ควรล้าง** — เงียบสนิท
+ไม่มี error ให้เห็น ดู [§4.7](#47-nginx-helper-จำเป็น) ก่อนสรุปว่า "แคชมันดื้อ"
+
 ### ชั้นอื่นที่อาจแคชซ้อนอยู่
 
 | ชั้น | สถานะบนเครื่องนี้ | ล้างยังไง |
@@ -314,11 +317,45 @@ wp-admin → Plugins → ค้นหา **Nginx Helper** → Install → Activa
 
 **Settings:**
 - Caching Method: **Nginx Fastcgi cache**
-- Purge Method: **Using a GET request to PURGE/url**
+- Purge Method: **Delete local server cache files** ← 🔴 **ไม่ใช่ GET request**
 - ✅ Purge on post publish / edit / delete
 
+### 🔴 ทำไมไม่ใช้ "Using a GET request to PURGE/url" ทั้งที่เครื่องมีโมดูลให้
+
+เอกสารฉบับก่อนแนะนำค่านั้น **และมันใช้ไม่ได้จริงบนเครื่องที่ตั้งตามคู่มือนี้**
+ทั้งสองทางของปลั๊กอินตันคนละเหตุผล — ปุ่มกดได้ ไม่มี error แต่ไม่มีอะไรถูกลบ:
+
+| ทาง | ตันเพราะ |
+|---|---|
+| `Using a GET request` | PHP ยิง HTTP ไปที่ตัวเองแล้วให้ nginx ลบให้ แต่ `location /purge` ตั้ง `allow 127.0.0.1; deny all;` — ไซต์อยู่หลัง **Cloudflare** PHP จึง resolve ได้ IP ของ Cloudflare คำขอวิ่งออกนอกเครื่องแล้ววนกลับ ต้นทางไม่ใช่ `127.0.0.1` อีกต่อไป → โดน deny (Cloudflare ตอบ `403` ให้ด้วยซ้ำ) |
+| `Delete local server cache files` | PHP ลบไฟล์ตรง ๆ แต่ aaPanel ใส่ `.user.ini` ล็อก `open_basedir` ให้ PHP อยู่แต่ในโฟลเดอร์ไซต์ตัวเอง → `open_basedir restriction in effect. File(/www/server/fastcgi_cache/...)` |
+
+**เลือกทาง 2 แล้วเปิดทางให้มัน** ด้วย [`scripts/fix-cache-purge.sh`](../scripts/fix-cache-purge.sh)
+ซึ่งเติม path ของโฟลเดอร์แคชเข้า `open_basedir` และตั้ง `purge_method` ให้ทุกไซต์:
+
+```powershell
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh --check"   # ดูก่อน
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh"           # แก้จริง
+```
+
+เลือกทาง 2 เพราะมันไม่ยิง HTTP ออกไปเลย จึงไม่มีอะไรให้ Cloudflare, WAF, หรือ
+`deny all` มาขวางได้ในอนาคต ส่วนทาง 1 ต้องให้ทุกอย่างระหว่างทางเรียงถูกหมดทุกชั้น
+
+> **ผลข้างเคียงที่ต้องรับ:** ทุกไซต์ใช้โฟลเดอร์แคชร่วมกัน การเปิด `open_basedir`
+> แปลว่า PHP ของไซต์หนึ่งอ่าน/ลบไฟล์แคชของไซต์อื่นบนเครื่องเดียวกันได้
+> รับได้เมื่อทุกเว็บเป็นของเจ้าของเดียวกัน — **ถ้าวันหนึ่งเครื่องนี้ขายพื้นที่ให้คนนอก
+> ต้องกลับมาทบทวนข้อนี้**
+
+> `.user.ini` ถูก aaPanel ตั้ง `chattr +i` ไว้ ต้อง `chattr -i` ก่อนแก้แล้วใส่กลับ
+> (สาเหตุเดียวกับ [07 ข้อ 12](07-troubleshooting.md)) และค่าใหม่จะมีผลหลัง
+> `user_ini.cache_ttl` 300 วินาที — สคริปต์ reload php-fpm ให้เลยไม่ต้องรอ
+
+> ไซต์ใหม่ที่ทีมเพิ่มหลังจากนี้ [`watch-new-sites.sh`](../scripts/watch-new-sites.sh)
+> เติม `open_basedir` ให้เองตอน stamp ([05 §5.1c](05-operations.md)) — ไม่ต้องมารันซ้ำ
+
 > เซิร์ฟเวอร์นี้มี module `ngx_cache_purge` ติดตั้งมาแล้ว
-> (ยืนยันด้วย `nginx -V 2>&1 | grep purge`) จึงล้าง cache ทีละหน้าได้
+> (ยืนยันด้วย `nginx -V 2>&1 | grep purge`) กลไก purge เองไม่ได้เสีย
+> ทดสอบยิงจาก `127.0.0.1` ตรง ๆ ได้ `200` แล้วหน้าเป็น `MISS` ทันที — ที่เสียคือทางเข้า
 
 ---
 

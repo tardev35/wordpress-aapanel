@@ -198,6 +198,7 @@ panel เขียนทับ และกรณีที่เครื่อ�
 | `enable-php-83-wpfastcgi.conf` ต่างจากต้นฉบับใน `/root/wpaa/configs/` | สำรอง กู้ฉบับที่จูนแล้วกลับ reload แล้วล้างแคชทั้งเครื่อง — **ถ้า `nginx -t` ไม่ผ่านจะเอาของเดิมกลับ** |
 | โฟลเดอร์ใน `/www/wwwroot/` ที่**ไม่มี** `vhost/nginx/<domain>.conf` | ข้าม — ไม่ใช่ไซต์ที่ panel สร้าง |
 | ไซต์ที่ไม่มี `extension/<domain>/00-common.conf` | รัน `stamp-site.sh` (กฎ www + ปิด auto-update + reload) แล้วล้างแคชของโดเมนนั้น |
+| ไซต์ WordPress ที่ `.user.ini` ยังไม่มี path ของโฟลเดอร์แคชใน `open_basedir` | รัน `fix-cache-purge.sh <domain>` — ไม่งั้นปุ่ม Purge ในหน้า WP กดแล้วเงียบ ([04 §4.7](04-cache.md)) |
 | ไซต์ที่ stamp แล้ว แต่ `wp-config.php` ยังไม่มี `AUTOMATIC_UPDATER_DISABLED` | รัน `set-wp-autoupdate.sh` อย่างเดียว **ไม่ reload nginx ซ้ำ** |
 
 แถวสุดท้ายไม่ใช่เคสหายาก — มันคือ **ลำดับปกติ** ของ WP Toolkit ที่สร้าง vhost ก่อนแล้วค่อย

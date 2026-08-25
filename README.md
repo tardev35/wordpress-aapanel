@@ -109,7 +109,8 @@ done
 ## 🔴 งานที่ยังค้าง (ยืนยันจากเครื่องอ้างอิง เมื่อ 2026-08-23)
 
 - [ ] **ตั้ง cron ตรวจ+ซ่อมอัตโนมัติ** — `scripts/install-autoheal.sh` ([05 §5.1b](docs/05-operations.md))
-- [ ] **ตั้ง watcher stamp ไซต์ใหม่** — `scripts/install-site-watcher.sh` ([05 §5.1c](docs/05-operations.md)) · ทำแล้วบน `187.52.125.203`
+- [ ] **ตั้ง watcher stamp ไซต์ใหม่** — `scripts/install-site-watcher.sh` ([05 §5.1c](docs/05-operations.md)) · ทำแล้วบน `187.52.125.203` และ `187.52.122.249`
+- [ ] **เปิดทางให้ปุ่ม Purge ใช้ได้** — `scripts/fix-cache-purge.sh` ([04 §4.7](docs/04-cache.md)) · ทำแล้วทั้ง 2 เครื่อง
 - [ ] **ล็อก panel** — ยังเป็นพอร์ต `8888` ต้องเปลี่ยนพอร์ต + security entrance + password
 - [ ] **ตั้ง Backup + ทดสอบ restore** — ยังไม่มี backup เลยแม้แต่ชุดเดียว
 - [ ] SSH: ปิด password login (คีย์ใช้ได้แล้ว แต่ password ยังเปิดอยู่)
@@ -201,6 +202,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`harden-nginx.sh`](scripts/harden-nginx.sh) | ปิดรู 443 + กฎ www · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
+| [`fix-cache-purge.sh`](scripts/fix-cache-purge.sh) | ทำให้ปุ่ม Purge ในหน้า WP ล้างแคชได้จริง (`--check` ดูอย่างเดียว) | scp หรือ cmd /c |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`install-site-watcher.sh`](scripts/install-site-watcher.sh) | ตั้ง path+timer ให้ stamp ไซต์ใหม่เอง ไม่ต้องมีคนสั่ง · **ครั้งเดียวต่อเครื่อง** (`--remove` ถอด) | **ต้อง `scp`** |
 | [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |

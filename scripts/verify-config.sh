@@ -91,6 +91,17 @@ for u in wpaa-newsite.path wpaa-newsite.timer; do
   fi
 done
 
+printf "%-34s : " "ปุ่ม Purge ใช้ได้ (open_basedir)"
+PURGEMISS=""
+for c in /www/wwwroot/*/wp-config.php; do
+  [ -f "$c" ] || continue
+  sd=$(dirname "$c"); sb=$(basename "$sd")
+  ini="$sd/.user.ini"
+  [ -f "$ini" ] || continue
+  grep -q /www/server/fastcgi_cache "$ini" || PURGEMISS="$PURGEMISS $sb"
+done
+if [ -z "$PURGEMISS" ]; then echo "OK"; else echo "ขาด ->$PURGEMISS (รัน fix-cache-purge.sh)"; FAIL=1; fi
+
 printf "%-34s : " "nightly-check ตั้ง cron ไว้"
 NCRON=$( { crontab -l 2>/dev/null; cat /www/server/cron/* 2>/dev/null; } | grep -c "nightly-check.sh" )
 if [ "$NCRON" = "0" ]; then

@@ -27,6 +27,7 @@
 | 9 | 🔴 **Backup + ทดสอบ restore** | [05 §5.3](05-operations.md) | 40 นาที |
 | 9b | ตั้ง cron ตรวจ+ซ่อมเองทุกคืน (**ตั้งในหน้า Cron ของ panel**) | [05 §5.1b](05-operations.md) | 3 นาที |
 | 9c | 🔴 **ให้เครื่อง stamp ไซต์ใหม่เอง** (`install-site-watcher.sh`) | [05 §5.1c](05-operations.md) · [§0.6](#06--ให้เครื่อง-stamp-ไซต์ใหม่เอง--ข้อที่ห้ามข้ามที่สุดในหน้านี้) | 2 นาที |
+| 9d | ให้ปุ่ม Purge ในหน้า WP ใช้ได้ (`fix-cache-purge.sh`) | [04 §4.7](04-cache.md) | 2 นาที |
 | 10 | เว็บแรก | [06](06-new-site.md) (WordPress) · [09](09-static-sites.md) (static) | 10 นาที |
 
 **ลำดับที่ห้ามสลับ:**
@@ -68,6 +69,9 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --no-cron"
 
 # 5) ให้เครื่อง stamp ไซต์ใหม่เอง  <-- ห้ามข้าม ดู 0.6
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-site-watcher.sh"
+
+# 5b) ให้ปุ่ม Purge ในหน้า WP ล้างแคชได้จริง (ดู 04 §4.7)
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/fix-cache-purge.sh"
 
 # 6) ยืนยัน - ต้องขึ้น "ผ่านทั้งหมด"
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/verify-config.sh"
