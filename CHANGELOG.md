@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-08-25 (รอบ 6) — จูน MariaDB ทั้ง 2 เครื่อง (ค่าที่ไม่เคยถูกตั้งจริงเลย)
+
+`verify-config.sh` ที่เพิ่งเพิ่มด่าน MariaDB เข้าไปฟ้องว่า **4 ใน 5 ค่าใน
+[03 §3.4](docs/03-tuning.md) ไม่เคยถูกตั้งบนเครื่องไหนเลย** — เหมือนกันเป๊ะทั้งสองเครื่อง
+
+| ค่า | ก่อน | หลัง |
+|---|---|---|
+| `innodb_buffer_pool_size` | `1024M` | **`4096M`** |
+| `max_connections` | `400` | **`200`** |
+| `join_buffer_size` | `4096K` | **`256K`** |
+| `read_rnd_buffer_size` | `1024K` | **`256K`** |
+| `table_open_cache` | `1024` | **`2048`** |
+| `long_query_time` | `3` | **`2`** |
+| `innodb_flush_method` | ไม่ได้ตั้ง | **`O_DIRECT`** |
+| `innodb_flush_log_at_trx_commit` | `1` (เฉพาะ 122.249) | **`2`** |
+| `innodb_io_capacity` / `_max` / `table_definition_cache` | ไม่ได้ตั้ง (เฉพาะ 122.249) | **ตั้งแล้ว** |
+
+`join_buffer_size 4096K × max_connections 400` คือกรณีที่ [03 §3.4](docs/03-tuning.md)
+เตือนไว้ตรง ๆ — จองแยกต่อ connection ได้ถึง ~1.6 GB โดย WordPress แทบไม่ได้ใช้
+
+### เพิ่ม [`scripts/apply-mysql-config.sh`](scripts/apply-mysql-config.sh)
+
+ทำเป็นสคริปต์เพราะ panel เขียนทับ `/etc/my.cnf` ได้ (มี `# bt_mysql_set` เป็นร่องรอย)
+และเครื่องใหม่ก็ต้องใช้ · `--check` ดูอย่างเดียว · **ไม่ใส่ `--restart` = แก้ไฟล์เฉย ๆ**
+ให้เลือกเวลา restart เอง
+
+**MariaDB ไม่มีตัวตรวจ syntax แบบ `nginx -t`** — ทดสอบแล้วว่า `mysqld --verbose --help`
+ผ่านแม้ใส่ option มั่ว ๆ (exit 0) และ `--validate-config` รันเป็น root ไม่ได้ จึงกันด้วย:
+
+1. เทียบชื่อ option ทุกตัวกับหน้า help ก่อนเขียน — ทดสอบแล้วว่ามันปฏิเสธชื่อปลอมจริง
+2. สำรอง `/etc/my.cnf` ไป `/root/wpaa/backups/` เสมอ
+3. **ถ้า restart แล้วไม่กลับมาใน 60 วินาที กู้ไฟล์เดิมแล้ว restart ใหม่ให้เอง**
+
+### ผลจริง
+
+| เครื่อง | ไซต์ | restart | หลังทำ |
+|---|---|---|---|
+| `187.52.125.203` | 7 | **2 วินาที** | ทุกไซต์ 200 · `verify-config.sh` ผ่านทั้งหมด |
+| `187.52.122.249` | 84 | **2 วินาที** | ทุกไซต์ 200 · `verify-config.sh` ผ่านทั้งหมด |
+
+ยืนยันด้วย `SHOW VARIABLES` จากตัว MariaDB เอง ไม่ใช่จากไฟล์ · ไม่มี `[ERROR]` ใน error log
+
+> ⚠️ `innodb_flush_log_at_trx_commit = 2` บน `122.249` เปลี่ยนจาก `1` — แลกความทนทาน
+> กับความเร็ว: ถ้าเครื่อง**ดับกะทันหัน**อาจเสียธุรกรรม 1 วินาทีสุดท้าย เป็นค่าที่
+> [03 §3.4](docs/03-tuning.md) ระบุไว้อยู่แล้ว และเครื่องนี้**ยังไม่มี backup**
+> ควรทบทวนอีกทีเมื่อ backup พร้อม
+
+---
+
 ## 2026-08-25 (รอบ 5) — คู่มือสำหรับเครื่องที่ไม่มี template aaPanel + เจอ MariaDB ไม่เคยถูกจูน
 
 ### เพิ่ม [10-bare-linux.md](docs/10-bare-linux.md)

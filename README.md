@@ -204,6 +204,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`apply-cache-config.sh`](scripts/apply-cache-config.sh) | ติดตั้ง FastCGI config ฉบับที่จูนแล้ว | **ต้อง `scp`** |
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
 | [`fix-cache-purge.sh`](scripts/fix-cache-purge.sh) | ทำให้ปุ่ม Purge ในหน้า WP ล้างแคชได้จริง (`--check` ดูอย่างเดียว) | scp หรือ cmd /c |
+| [`apply-mysql-config.sh`](scripts/apply-mysql-config.sh) | ตั้งค่า MariaDB ตาม [03 §3.4](docs/03-tuning.md) · `--check` ดูก่อน · `--restart` ถึงจะมีผล | scp หรือ cmd /c |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`install-site-watcher.sh`](scripts/install-site-watcher.sh) | ตั้ง path+timer ให้ stamp ไซต์ใหม่เอง ไม่ต้องมีคนสั่ง · **ครั้งเดียวต่อเครื่อง** (`--remove` ถอด) | **ต้อง `scp`** |
 | [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |
