@@ -554,10 +554,25 @@ curl -sk --resolve $D:443:127.0.0.1 "https://$D/?nocache=1" | grep -o '<h1[^>]*>
 
 ถ้าอันล่างถูก อันบนผิด = **บันทึกสำเร็จแล้ว ติดที่แคชล้วน ๆ** ไม่ต้องไปไล่หาว่าลืมกด Update
 
-**สาเหตุ:** Purge Method ของ Nginx Helper ตันทั้งสองทางบนเครื่องที่ตั้งตามคู่มือนี้ —
-`GET request` โดน `deny all` เพราะคำขอวนออกไปเจอ Cloudflare แล้วกลับมาด้วย IP อื่น
-ส่วน `Delete local server cache files` โดน `open_basedir` ของ `.user.ini` กั้น
-อธิบายเต็มใน [04 §4.7](04-cache.md)
+**สาเหตุ:** มีได้ 5 อย่าง และเจอมาแล้วทุกอย่าง — ดูตารางเต็มใน [04 §4.7](04-cache.md)
+
+ที่เจอบ่อยที่สุด 3 อย่าง:
+
+1. `purge_method = get_request` → ยิง HTTP หาตัวเองแล้วโดน `deny all` เพราะวนออกไป
+   เจอ Cloudflare แล้วกลับมาด้วย IP อื่น
+2. `open_basedir` ของ `.user.ini` กั้น PHP ไม่ให้แตะโฟลเดอร์แคช
+3. 🔴 **`RT_WP_NGINX_HELPER_CACHE_PATH` ชี้ไปโฟลเดอร์ที่ไม่ใช่ที่ nginx ใช้จริง**
+
+**ข้อ 3 คือข้อที่หลอกที่สุด** — เจอ 97 จาก 136 ไซต์ชี้ไป `/dev/shm/nginx-cache/wp`
+ซึ่งว่างเปล่า ปลั๊กอินจึงลบไฟล์ในโฟลเดอร์ที่ไม่มีอะไรอยู่ **รายงานว่าสำเร็จทุกครั้ง**
+อาการที่ได้คือ "เปิดปลั๊กอินแล้วก็ยังไม่หาย" ทั้งที่ปลั๊กอินทำงานปกติทุกอย่าง
+
+เทียบสองค่านี้ก่อนเสมอ:
+
+```bash
+grep -oP 'fastcgi_cache_path \K[^ ]+' /www/server/panel/vhost/nginx/0.fastcgi_cache.conf
+grep -h RT_WP_NGINX_HELPER_CACHE_PATH /www/wwwroot/*/wp-config.php | sort | uniq -c
+```
 
 **ยืนยันสาเหตุด้วยการให้ PHP ของไซต์นั้นพูดเอง:**
 
@@ -581,9 +596,12 @@ rm -f /www/wwwroot/$D/probe.php      # 🔴 ลบทิ้งทุกครั
 **แก้:**
 
 ```powershell
-ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh"      # ให้ปุ่มใช้ได้ถาวร
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh"      # ให้ปุ่มใช้ได้ถาวร (ทั้ง 5 ข้อ)
 ssh root@SERVER_IP "bash /root/wpaa/scripts/clear-cache.sh DOMAIN"   # ล้างของที่ค้างอยู่ตอนนี้
 ```
+
+**แล้วพิสูจน์ว่าใช้ได้จริง** ด้วยวิธีใน [04 §4.7](04-cache.md) — อย่าเชื่อว่า "เปิดแล้ว"
+เท่ากับใช้ได้ เพราะทุกความผิดพลาดในหมวดนี้เงียบเหมือนกันหมด
 
 **ถ้ายังไม่หายหลังจากนั้น** = ค้างที่ Cloudflare ไม่ใช่ที่เครื่อง แยกชั้นจาก response header
 ในเบราว์เซอร์ (DevTools → Network):

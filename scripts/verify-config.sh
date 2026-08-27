@@ -125,16 +125,40 @@ else
   echo "ไม่ตรง: panel=$PIP เครื่องจริง=$RIP -> ดู 07 ข้อ 18"; FAIL=1
 fi
 
-printf "%-34s : " "ปุ่ม Purge ใช้ได้ (open_basedir)"
+# ปุ่ม Purge ต้องครบ 3 ข้อที่ตรวจจากไฟล์ได้ (อีก 2 ข้ออยู่ในฐานข้อมูล - ดู fix-cache-purge.sh --check)
+# ขาดข้อเดียวก็เงียบสนิท ไม่มี error ให้เห็น จึงต้องมีคนตรวจแทน
+CACHEDIR=$(grep -oP 'fastcgi_cache_path \K[^ ]+' /www/server/panel/vhost/nginx/0.fastcgi_cache.conf 2>/dev/null)
+CACHEDIR=${CACHEDIR:-/www/server/fastcgi_cache}
+
+printf "%-34s : " "purge: open_basedir"
 PURGEMISS=""
 for c in /www/wwwroot/*/wp-config.php; do
   [ -f "$c" ] || continue
-  sd=$(dirname "$c"); sb=$(basename "$sd")
-  ini="$sd/.user.ini"
+  sd=$(dirname "$c"); sb=$(basename "$sd"); ini="$sd/.user.ini"
   [ -f "$ini" ] || continue
-  grep -q /www/server/fastcgi_cache "$ini" || PURGEMISS="$PURGEMISS $sb"
+  grep -q "$CACHEDIR" "$ini" || PURGEMISS="$PURGEMISS $sb"
 done
 if [ -z "$PURGEMISS" ]; then echo "OK"; else echo "ขาด ->$PURGEMISS (รัน fix-cache-purge.sh)"; FAIL=1; fi
+
+# ข้อที่ทำให้ "เปิดปลั๊กอินแล้วยังไม่หาย" - ปลั๊กอินถูกชี้ไปลบผิดโฟลเดอร์
+printf "%-34s : " "purge: cache path ใน wp-config"
+PATHMISS=""
+for c in /www/wwwroot/*/wp-config.php; do
+  [ -f "$c" ] || continue
+  sb=$(basename "$(dirname "$c")")
+  p=$(grep -m1 RT_WP_NGINX_HELPER_CACHE_PATH "$c" | sed "s/.*, *'//;s/' *).*//")
+  [ "$p" = "$CACHEDIR" ] || PATHMISS="$PATHMISS $sb(${p:-ไม่ได้ตั้ง})"
+done
+if [ -z "$PATHMISS" ]; then echo "OK ($CACHEDIR)"; else echo "ชี้ผิด ->$PATHMISS"; FAIL=1; fi
+
+printf "%-34s : " "purge: ไฟล์ปลั๊กอิน nginx-helper"
+FILEMISS=""
+for c in /www/wwwroot/*/wp-config.php; do
+  [ -f "$c" ] || continue
+  sd=$(dirname "$c")
+  [ -f "$sd/wp-content/plugins/nginx-helper/nginx-helper.php" ] || FILEMISS="$FILEMISS $(basename "$sd")"
+done
+if [ -z "$FILEMISS" ]; then echo "OK"; else echo "ไม่มี ->$FILEMISS"; FAIL=1; fi
 
 printf "%-34s : " "nightly-check ตั้ง cron ไว้"
 NCRON=$( { crontab -l 2>/dev/null; cat /www/server/cron/* 2>/dev/null; } | grep -c "nightly-check.sh" )

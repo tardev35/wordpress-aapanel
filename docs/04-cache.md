@@ -353,6 +353,64 @@ ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh"           # แ�
 > ไซต์ใหม่ที่ทีมเพิ่มหลังจากนี้ [`watch-new-sites.sh`](../scripts/watch-new-sites.sh)
 > เติม `open_basedir` ให้เองตอน stamp ([05 §5.1c](05-operations.md)) — ไม่ต้องมารันซ้ำ
 
+### 🔴 ต้องครบ 5 ข้อ ปุ่มถึงจะล้างแคชได้จริง
+
+ขาดข้อเดียวปุ่มก็กดได้ตามปกติ **ไม่มี error ให้เห็น แต่ไม่มีอะไรถูกลบ**
+ทั้ง 5 ข้อนี้เจอผิดมาแล้วจริงบนเครื่องจริงระหว่าง 2026-08-25 ถึง 2026-08-27:
+
+| # | ต้องเป็น | เคยผิดยังไง |
+|---|---|---|
+| 1 | `RT_WP_NGINX_HELPER_CACHE_PATH` ใน `wp-config.php` ชี้ไป**โฟลเดอร์ที่ nginx ใช้จริง** | **97 จาก 136 ไซต์** ชี้ไป `/dev/shm/nginx-cache/wp` ซึ่งว่างเปล่า |
+| 2 | `.user.ini` เปิด `open_basedir` ให้ PHP แตะโฟลเดอร์นั้นได้ | aaPanel ล็อกไว้ที่โฟลเดอร์ไซต์ → `open_basedir restriction in effect` |
+| 3 | มีไฟล์ปลั๊กอิน `nginx-helper` ในไซต์ | **48 ไซต์ไม่มีไฟล์เลย** |
+| 4 | ปลั๊กอินถูก activate | **59 ไซต์ปิดอยู่** หลายไซต์เปิด `litespeed-cache` แทน |
+| 5 | `purge_method = unlink_files` | ค่าเริ่มต้นคือ `get_request` ซึ่งตันเพราะ Cloudflare |
+
+**ข้อ 1 คือข้อที่หลอกที่สุด** — ปลั๊กอินลบไฟล์ในโฟลเดอร์ที่ไม่มีอะไรอยู่ แล้วรายงานว่าสำเร็จ
+ทีมจึงกดปุ่มซ้ำแล้วสรุปว่า "เปิดปลั๊กอินแล้วก็ยังไม่หาย" ทั้งที่ปลั๊กอินทำงานปกติทุกอย่าง
+
+[`fix-cache-purge.sh`](../scripts/fix-cache-purge.sh) จัดการให้ครบทั้ง 5 ข้อ:
+
+```powershell
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh --check"   # ดูก่อน
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh"           # แก้จริง
+```
+
+มันอ่านโฟลเดอร์แคชจาก `0.fastcgi_cache.conf` เอง ไม่ได้เขียนตายตัว — ถ้าวันหนึ่งย้ายแคช
+ไป RAM ตาม [§4.6](#46-ปรับให้เร็วขึ้นอีก-ทางเลือก-ย้าย-cache-ไป-ram) สคริปต์จะตามไปเอง ·
+`wp-config.php` ตรวจ `php -l` ก่อนทับเสมอ · สำรองทุกไฟล์ไว้นอก web root ที่ `/root/wpaa/backups/`
+
+### ✅ วิธีพิสูจน์ว่าปุ่มใช้ได้จริง (อย่าเชื่อว่า "เปิดแล้ว" = ใช้ได้)
+
+ยิง hook ตัวเดียวกับที่ปุ่มเรียก แล้วดูว่าไฟล์แคชหายจริงไหม:
+
+```bash
+D=DOMAIN.TLD
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/" -o /dev/null      # อุ่นแคช
+F=$(grep -rlaE "^KEY: httpsGET${D}/$" /www/server/fastcgi_cache | head -1)
+
+cat > /www/wwwroot/$D/purgetest.php <<'PHP'
+<?php
+define('WP_USE_THEMES', false);
+require __DIR__ . '/wp-load.php';
+echo "path = " . RT_WP_NGINX_HELPER_CACHE_PATH . "\n";
+echo "active = " . (is_plugin_active('nginx-helper/nginx-helper.php') ? 'yes' : 'no') . "\n";
+do_action('rt_nginx_helper_purge_all');
+PHP
+chown www:www /www/wwwroot/$D/purgetest.php
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/purgetest.php?x=1"
+rm -f /www/wwwroot/$D/purgetest.php      # 🔴 ลบทิ้งทุกครั้ง อย่าทิ้งไว้ใน web root
+
+[ -f "$F" ] && echo "ยังอยู่ = ยังไม่ได้ผล" || echo "หายแล้ว = ใช้ได้จริง"
+```
+
+ถ้ามันพ่น `open_basedir restriction in effect` ออกมา คือข้อ 2 ยังไม่ผ่าน ·
+ถ้า `path =` ไม่ตรงกับโฟลเดอร์จริง คือข้อ 1 ยังไม่ผ่าน
+
+> ⚠️ **แก้ `wp-config.php` แล้วต้อง reload php-fpm** ไม่งั้น OPcache ยังใช้ bytecode เดิม
+> แล้วปลั๊กอินจะยังเห็น path เก่า — เจอมาแล้วจริง ๆ ตอนแก้ครบ 97 ไซต์แต่ยังไม่มีผล
+> (สคริปต์ reload ให้เองแล้ว)
+
 > เซิร์ฟเวอร์นี้มี module `ngx_cache_purge` ติดตั้งมาแล้ว
 > (ยืนยันด้วย `nginx -V 2>&1 | grep purge`) กลไก purge เองไม่ได้เสีย
 > ทดสอบยิงจาก `127.0.0.1` ตรง ๆ ได้ `200` แล้วหน้าเป็น `MISS` ทันที — ที่เสียคือทางเข้า
