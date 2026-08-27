@@ -123,10 +123,19 @@ for dir in /www/wwwroot/*/; do
   # ต้องมี wp-config.php ด้วย - ไซต์ static (docs/09) ไม่มีปลั๊กอินให้ล้างแคช
   # และ fix-cache-purge.sh ก็ข้ามมันอยู่แล้ว ถ้าไม่กันตรงนี้จะวนเรียกทุกนาทีไม่จบ
   # (เจอจริงกับ sclass88-member.com ซึ่งเป็นเว็บ Astro)
+  # เช็ค 2 อย่างที่ดูจากไฟล์ได้เร็ว ๆ ก่อน แล้วค่อยเรียกสคริปต์เต็มซึ่งต้องต่อ MySQL
+  #
+  # ที่ต้องดูไฟล์ปลั๊กอินด้วย: ทีมใช้ all-in-one-wp-migration import ไซต์ทับกันบ่อย
+  # ซึ่งเขียนทับทั้ง wp-content และฐานข้อมูล = ปลั๊กอินหายและค่าที่ตั้งไว้หายไปพร้อมกัน
+  # ส่วน .user.ini อยู่นอก wp-content จึงรอดทุกครั้ง ถ้าดูแค่ตัวนั้นจะไม่มีวันเจอ
+  # (เจอจริง 2026-08-27: ไซต์เสียปลั๊กอินเพิ่มทีละ 1-3 ตัวระหว่างวัน)
   ini="$dir/.user.ini"
-  if [ -x "$FIXPURGE" ] && [ -f "$dir/wp-config.php" ] && [ -f "$ini" ] && ! grep -q "$CACHEDIR" "$ini"; then
+  need_purgefix=0
+  [ -f "$ini" ] && ! grep -q "$CACHEDIR" "$ini" && need_purgefix=1
+  [ -f "$dir/wp-content/plugins/nginx-helper/nginx-helper.php" ] || need_purgefix=1
+  if [ -x "$FIXPURGE" ] && [ -f "$dir/wp-config.php" ] && [ "$need_purgefix" = 1 ]; then
     acted=1
-    log "ไซต์ $d - open_basedir ยังกั้นโฟลเดอร์แคช ปุ่ม Purge ในหน้า WP จะใช้ไม่ได้"
+    log "ไซต์ $d - ปุ่ม Purge ยังใช้ไม่ได้ (open_basedir หรือไฟล์ปลั๊กอินหาย)"
     log "  $("$FIXPURGE" "$d" 2>&1 | grep -- "$d" || echo '(ไม่มีผลลัพธ์)')"
   fi
 

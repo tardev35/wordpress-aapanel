@@ -263,6 +263,39 @@ ssh root@SERVER_IP "bash /root/wpaa/scripts/apply-mysql-config.sh --restart"   #
 สำรอง `/etc/my.cnf` ไป `/root/wpaa/backups/` เสมอ ·
 **ถ้า restart แล้วไม่กลับมาใน 60 วินาที จะกู้ไฟล์เดิมแล้ว restart ใหม่ให้เอง**
 
+### 🔴 กับดัก: `restart` คืน exit 0 โดยที่ MariaDB ไม่เคยลง
+
+เจอจริงบน `187.52.125.203` เมื่อ 2026-08-27 — **ทั้งสองคำสั่งคืน 0 แต่ `Uptime` ไม่ขยับเลย**
+
+```bash
+/etc/init.d/mysqld restart      # Restarting mysqld (via systemctl)... exit=0
+systemctl restart mysqld        # exit=0
+```
+
+**สาเหตุ: ไฟล์ pid หาย** (`/www/server/data/$(uname -n).pid`) init script หาโปรเซสจาก
+ไฟล์นี้เท่านั้น พอไม่มีก็สรุปว่า "ไม่ได้รันอยู่" → `stop` ผ่านไปเฉย ๆ ส่วน `start`
+ไปเจอ socket ถูกใช้อยู่แล้วก็เงียบ **ค่าใหม่ใน `my.cnf` จึงไม่เคยมีผล**
+
+ตรวจให้ชัดด้วย `Uptime` เสมอ อย่าเชื่อ exit code:
+
+```bash
+mysql -u<user> -p<pass> -Nse "SHOW GLOBAL STATUS LIKE 'Uptime';"
+```
+
+แก้: สร้าง pid file กลับให้ตรงกับโปรเซสจริง แล้ว restart ใหม่
+
+```bash
+P=/www/server/data/$(uname -n).pid
+pgrep -f 'mariadbd --basedir' | head -1 > "$P"
+chown mysql:mysql "$P"; chmod 644 "$P"
+/etc/init.d/mysqld restart
+```
+
+> [`apply-mysql-config.sh`](../scripts/apply-mysql-config.sh) สร้าง pid file ให้เองถ้าหาย
+> และ**เทียบ pid ก่อน/หลังเพื่อยืนยันว่า restart เกิดขึ้นจริง** ถ้า pid ไม่เปลี่ยนมันจะ
+> รายงานว่าล้มเหลวแทนที่จะบอกว่าสำเร็จ — `mysqladmin ping` อย่างเดียวแยกสองกรณีนี้ไม่ออก
+> เพราะตัวเดิมที่ยังวิ่งอยู่ก็ตอบ ping ได้
+
 > ⚠️ **MariaDB ไม่มีตัวตรวจ syntax แบบ `nginx -t`** — ทดสอบแล้วว่า
 > `mysqld --verbose --help` ผ่านแม้ใส่ option มั่ว ๆ และ `--validate-config` รันเป็น root
 > ไม่ได้ สคริปต์จึงกันด้วยวิธีอื่นแทน: เทียบชื่อ option กับหน้า help ก่อนเขียน
@@ -278,6 +311,18 @@ ssh root@SERVER_IP "bash /root/wpaa/scripts/apply-mysql-config.sh --restart"   #
 |---|---|---|---|
 | `187.52.125.203` | 7 | **2 วินาที** | ทุกไซต์ 200 |
 | `187.52.122.249` | 84 | **2 วินาที** | ทุกไซต์ 200 |
+| `187.52.122.249` (รอบ 2026-08-27) | **145** | **2 วินาที** | ทุกไซต์ 200 |
+
+### 🔴 ค่าเหล่านี้ถอยกลับเองได้ — จึงมีตาข่ายรอบกลางคืน
+
+หน้า **Databases → Performance tuning** ของ aaPanel เขียนทับ `/etc/my.cnf` ทั้งไฟล์
+ยืนยันแล้ว 2026-08-27: ค่าที่ตั้งไว้เมื่อ 25 ส.ค. **ถอยกลับหมดทั้ง 2 เครื่อง** และ
+MariaDB ถูก restart ไปแล้วด้วย จึงวิ่งด้วยค่าเก่าจริง ๆ ไม่ใช่แค่ไฟล์เพี้ยน
+
+[`nightly-check.sh`](../scripts/nightly-check.sh) จึงตรวจ `my.cnf` ทุกคืนแล้ว
+**ตั้งค่ากลับพร้อม restart ให้เอง** — ข้อนี้เป็นข้อเดียวในสคริปต์นั้นที่ restart service
+ยอมรับได้เพราะยิงตอน 23:00 และวัดจริงได้ 2–3 วินาทีบนเครื่อง 145 ไซต์
+(ทดสอบด้วยการแกล้งเปลี่ยน `max_connections` เป็น 400 แล้วดูว่ามันกู้กลับ — ผ่าน)
 
 `SHOW VARIABLES` ยืนยันครบทั้ง 11 ค่าทั้งสองเครื่อง
 

@@ -174,6 +174,25 @@ fi
 
 echo
 echo "== 5. restart MariaDB =="
+
+# 🔴 ก่อน restart ต้องมี pid file ที่ตรงกับโปรเซสจริง
+#
+# init script หาโปรเซสจาก pid file เท่านั้น ถ้าไฟล์หาย มันจะสรุปว่า "ไม่ได้รันอยู่"
+# แล้ว stop ผ่านไปเฉย ๆ ส่วน start ก็ไปเจอ socket ถูกใช้อยู่แล้วเงียบไป
+# **ทั้งสองคำสั่งคืน exit 0 โดยที่ MariaDB ไม่เคยลงเลย**
+#
+# เจอจริง 2026-08-27 บน 187.52.125.203: ทั้ง /etc/init.d/mysqld restart และ
+# systemctl restart mysqld คืน 0 แต่ uptime ไม่ขยับสักวินาที ค่าใหม่จึงไม่เคยมีผล
+PIDF="/www/server/data/$(uname -n).pid"
+MPID=$(pgrep -f 'mariadbd --basedir' | head -1)
+if [ -n "$MPID" ] && [ ! -f "$PIDF" ]; then
+  echo "  !! ไม่มี pid file - สร้างกลับก่อน ไม่งั้น restart จะไม่เกิดขึ้นจริง"
+  printf '%s
+' "$MPID" > "$PIDF"
+  chown mysql:mysql "$PIDF" 2>/dev/null; chmod 644 "$PIDF"
+  echo "     $PIDF = $MPID"
+fi
+
 T0=$(date +%s)
 /etc/init.d/mysqld restart >/dev/null 2>&1
 
@@ -184,8 +203,18 @@ for i in $(seq 1 60); do
 done
 T1=$(date +%s)
 
+# ping บอกได้แค่ "มีคนตอบ" ไม่ได้บอกว่า "เพิ่งเกิดใหม่" - ถ้า restart ไม่เกิดขึ้นจริง
+# ping ก็ผ่านเพราะตัวเดิมยังวิ่งอยู่ จึงต้องเทียบ pid ว่าเปลี่ยนจริงไหม
+NPID=$(pgrep -f 'mariadbd --basedir' | head -1)
+if [ "$ok" = "1" ] && [ -n "$MPID" ] && [ "$NPID" = "$MPID" ]; then
+  echo "  🔴 pid ไม่เปลี่ยน ($MPID) = MariaDB ไม่ได้ restart จริง ค่าใหม่ยังไม่มีผล"
+  echo "     ไฟล์ถูกแก้แล้วและสำรองไว้ที่ $BAKFILE"
+  echo "     ตรวจ pid file แล้วลองใหม่:  ls -l $PIDF"
+  exit 1
+fi
+
 if [ "$ok" = "1" ]; then
-  echo "  กลับมาแล้วใน $((T1-T0)) วินาที"
+  echo "  กลับมาแล้วใน $((T1-T0)) วินาที (pid $MPID -> $NPID)"
 else
   echo "  !! ไม่กลับมาภายใน 60 วินาที - กู้ไฟล์เดิมแล้ว restart ใหม่"
   install -m 644 -o root -g root "$BAKFILE" "$CNF"

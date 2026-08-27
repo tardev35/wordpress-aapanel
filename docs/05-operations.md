@@ -94,6 +94,15 @@ ssh root@SERVER_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --remove-cron"
 | `0.catchall_ssl.conf` หาย | ติดตั้งกลับ |
 | ไซต์ที่ยังไม่ได้ stamp (ไม่มี `00-common.conf`) | ใส่กฎกลางให้ |
 | ไซต์ใหม่ที่ auto-update ยังเปิดอยู่ | ใส่ `AUTOMATIC_UPDATER_DISABLED` (ตรวจ `php -l` ก่อนทับ) |
+| ไซต์ที่ปุ่ม Purge ใช้ไม่ได้ (ปลั๊กอินหาย/ปิด/ค่าเพี้ยน) | เรียก `fix-cache-purge.sh` ครบทั้ง 5 ข้อ ([04 §4.7](04-cache.md)) |
+| `/etc/my.cnf` ถูก panel เขียนทับ | ตั้งค่ากลับ **แล้ว restart MariaDB** ([03 §3.4](03-tuning.md)) |
+
+> 🔴 **แถวสุดท้ายคือข้อเดียวที่ restart service** ข้ออื่นแค่ reload nginx
+> ยอมรับได้เพราะรอบนี้ยิงตอน 23:00 และวัดจริงได้ 2–3 วินาทีบนเครื่อง 145 ไซต์
+> หน้าที่อยู่ใน FastCGI cache ไม่กระทบเลยเพราะไม่แตะ PHP/MySQL
+>
+> ทำไมต้องมี: หน้า Databases → Performance tuning ของ panel เขียนทับ `my.cnf` ทั้งไฟล์
+> ค่าที่ตั้งไว้ 25 ส.ค. ถอยกลับหมดทั้ง 2 เครื่องภายใน 2 วัน โดยไม่มีอะไรฟ้อง
 
 > 🔴 **เพราะ auto-update ถูกปิด งาน "อัปเดต WP ทุกสัปดาห์" ในตารางข้างบนจึงเปลี่ยนจาก
 > "ควรทำ" เป็น "ห้ามพลาด"** — ไม่มีอะไรมาแพตช์ช่องโหว่ให้แล้ว ดู [08 ADR-012](08-decisions.md)

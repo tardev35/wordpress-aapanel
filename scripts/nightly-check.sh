@@ -105,7 +105,51 @@ if [ -x "$ROOT/scripts/set-wp-autoupdate.sh" ]; then
   fi
 fi
 
-# ---------- 5. ตัด log ไม่ให้โต ----------
+# ---------- 6. ปุ่ม Purge ของทุกไซต์ ----------
+# watcher ดูได้แค่ฝั่งไฟล์ (open_basedir, ไฟล์ปลั๊กอิน) เพราะมันยิงทุกนาที
+# ส่วนฝั่งฐานข้อมูล (ปลั๊กอิน active, purge_method) ต้องต่อ MySQL ทีละไซต์ ไม่คุ้มจะทำถี่
+# รอบกลางคืนจึงเก็บส่วนนั้นให้ - สำคัญเพราะการ import ไซต์ทับด้วย
+# all-in-one-wp-migration เขียนทับฐานข้อมูลทั้งก้อน ค่าที่ตั้งไว้จึงหายไปด้วย
+if [ -x "$ROOT/scripts/fix-cache-purge.sh" ]; then
+  fixed=$("$ROOT/scripts/fix-cache-purge.sh" 2>&1 | grep -E "แก้แล้ว|เติมแล้ว|คัดลอกแล้ว|เปิดแล้ว|สร้างแล้ว" || true)
+  if [ -n "$fixed" ]; then
+    echo "$fixed" | while IFS= read -r l; do
+      log "[แก้] purge: $(echo "$l" | sed 's/  */ /g')"
+    done
+  fi
+fi
+
+# ---------- 7. ค่าจูน MariaDB ----------
+# หน้า Databases > Performance tuning ของ aaPanel เขียนทับ /etc/my.cnf ทั้งไฟล์
+# ยืนยันแล้ว 2026-08-27: ค่าที่ตั้งไว้เมื่อ 25 ส.ค. ถอยกลับเป็นของโรงงานทั้ง 2 เครื่อง
+# (buffer pool 4096M -> 1024M, max_connections 200 -> 400) และ MariaDB ถูก restart
+# ไปแล้วด้วย จึงวิ่งด้วยค่าเก่าจริง ๆ ไม่ใช่แค่ไฟล์เพี้ยน
+#
+# 🔴 ข้อนี้ **restart MariaDB เอง** ต่างจากข้ออื่นในสคริปต์นี้ที่แค่ reload nginx
+# ยอมรับได้เพราะรอบนี้ยิงตอน 23:00 ซึ่งเงียบที่สุด และวัดเวลาจริงได้ 2 วินาที
+# ทั้งบนเครื่อง 7 ไซต์และเครื่อง 136 ไซต์ - หน้าที่อยู่ใน FastCGI cache ไม่กระทบเลย
+# เพราะไม่แตะ PHP/MySQL
+#
+# ไม่เขียนตรรกะซ้ำ - เรียก apply-mysql-config.sh ซึ่งสำรองไฟล์ ตรวจชื่อ option
+# และกู้ไฟล์เดิมคืนให้เองถ้า restart แล้วไม่กลับมาใน 60 วินาที
+MYCFG="$ROOT/scripts/apply-mysql-config.sh"
+if [ -x "$MYCFG" ]; then
+  if "$MYCFG" --check 2>/dev/null | grep -q ' -> '; then
+    drift=$("$MYCFG" --check 2>/dev/null | grep ' -> ' | awk '{print $1}' | tr '
+' ' ')
+    log "[แก้] /etc/my.cnf ถูกเขียนทับ - ค่าที่หลุด: $drift"
+    out=$("$MYCFG" --restart 2>&1)
+    if printf '%s' "$out" | grep -q "กลับมาแล้ว"; then
+      log "[ok] ตั้งค่ากลับแล้ว restart MariaDB - $(printf '%s' "$out" | grep 'กลับมาแล้ว' | sed 's/^ *//')"
+    else
+      log "[ล้มเหลว] restart MariaDB ไม่สำเร็จ - ดู /www/server/data/*.err"
+      printf '%s
+' "$out" | tail -5 >> "$LOG"
+    fi
+  fi
+fi
+
+# ---------- 8. ตัด log ไม่ให้โต ----------
 if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt "$LOG_KEEP" ]; then
   tail -n "$LOG_KEEP" "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
