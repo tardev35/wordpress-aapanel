@@ -239,6 +239,25 @@ panel เขียนทับ และกรณีที่เครื่อ�
 
 ### ดู log
 
+### 🔴 `path` unit ตายเงียบได้ด้วย `unit-start-limit-hit`
+
+systemd จำกัดจำนวนครั้งที่ service ถูกสตาร์ทไว้ (default 5 ครั้งใน 10 วินาที)
+`path` unit ยิง service ทุกครั้งที่มีอะไรเปลี่ยนใน `vhost/nginx/` ซึ่งตอน panel ต่ออายุ SSL
+หรือทีมเพิ่มไซต์รัว ๆ จะเปลี่ยนหลายครั้งติดกัน → เต็มโควตา → **systemd ฆ่า path unit ทิ้ง**
+
+เกิดจริงบน `187.52.122.249` เมื่อ 2026-08-27 18:25 UTC และ **ตายอยู่ 7 ชั่วโมง**
+กว่าจะรู้ตอน `verify-config.sh` ฟ้อง — ระหว่างนั้น timer รอบนาทียังทำงาน ไซต์ใหม่จึงยัง
+ถูก stamp อยู่ แค่ช้าลงจากเสี้ยววินาทีเป็นไม่เกิน 1 นาที
+
+แก้ด้วย `StartLimitIntervalSec=0` ใน service unit (มีใน
+[`install-site-watcher.sh`](../scripts/install-site-watcher.sh) แล้ว)
+ถ้าเจอ unit ที่ `failed` อยู่:
+
+```bash
+systemctl reset-failed wpaa-newsite.path
+bash /root/wpaa/scripts/install-site-watcher.sh
+```
+
 ```bash
 systemctl status wpaa-newsite.path           # ต้องเป็น active (waiting)
 systemctl list-timers wpaa-newsite.timer     # รอบล่าสุด / รอบถัดไป

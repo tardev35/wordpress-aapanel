@@ -57,6 +57,16 @@ cat > "$SVC" <<EOF
 [Unit]
 Description=wpaa - stamp ไซต์ใหม่ที่เพิ่งสร้างใน aaPanel
 Documentation=file://$ROOT/scripts/watch-new-sites.sh
+# 🔴 ปิด rate limit ของ systemd
+#
+# path unit ยิง service ทุกครั้งที่มีอะไรเปลี่ยนใน vhost/nginx/ ซึ่งตอน panel
+# ต่ออายุ SSL หรือทีมเพิ่มไซต์รัว ๆ จะเปลี่ยนหลายครั้งติดกันในไม่กี่วินาที
+# ค่า default (5 ครั้งใน 10 วินาที) จึงเต็มง่ายมาก แล้ว systemd จะ **ฆ่า path unit ทิ้ง**
+# ด้วย unit-start-limit-hit — ตัวจุดทันทีจึงตายเงียบ เหลือแต่ timer รอบนาที
+#
+# เกิดจริงบน 187.52.122.249 เมื่อ 2026-08-27 18:25 UTC และตายอยู่ 7 ชั่วโมง
+# กว่าจะรู้ตอน verify-config.sh ฟ้อง
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
