@@ -153,6 +153,22 @@ for dir in /www/wwwroot/*/; do
     log "  $("$FIXPURGE" "$d" 2>&1 | grep -- "$d" || echo '(ไม่มีผลลัพธ์)')"
   fi
 
+  # ---------- ปุ่ม Purge ถูกตั้งกลับเป็น get_request ----------
+  #
+  # ค่าที่ตั้งไว้ถอยกลับได้ ถ้ามีคนเปิดหน้า Settings ของ Nginx Helper แล้วกด Save
+  # (ฟอร์มส่งค่า default ซึ่งคือ get_request) หรือถ้าไซต์ถูก import ทับ
+  # เจอจริง 2026-08-28: 7 จาก 200 ไซต์ถอยกลับ ยิง /purge/ ออกไปรวมกันเกือบหมื่นครั้ง
+  #
+  # ไม่เช็คค่าในฐานข้อมูลทุกนาที เพราะต้องต่อ MySQL ทีละไซต์ - ใช้ "เสียงร้อง" แทน:
+  # get_request จะยิง /purge/... ซึ่ง nginx ปฏิเสธแล้วเขียนลง error log ทันที
+  # จับจากตรงนั้นถูกกว่ามาก และเลิกเองเมื่อค่าถูกแก้แล้ว
+  elog="/www/wwwlogs/$d.error.log"
+  if [ -x "$FIXPURGE" ] && [ -f "$elog" ] && [ -n "$(find "$elog" -mmin -2 2>/dev/null)" ]      && tail -50 "$elog" 2>/dev/null | grep -q 'access forbidden by rule.*GET /purge/'; then
+    acted=1
+    log "ไซต์ $d - ยิง /purge/ แล้วโดนปฏิเสธ = purge_method ถอยกลับเป็น get_request"
+    log "  $("$FIXPURGE" "$d" 2>&1 | grep -- "$d" || echo '(ไม่มีผลลัพธ์)')"
+  fi
+
   # ---------- stamp แล้ว แต่ WordPress เพิ่งมาลงทีหลัง ----------
   # เคสจริง: สร้างไซต์เปล่าก่อน (ยังไม่มี wp-config.php) แล้วค่อยลง WP ทีหลัง
   # รอบแรก stamp ไปตอนที่ยังไม่มี WordPress ให้ปิด จึงต้องมาปิดตอนนี้
