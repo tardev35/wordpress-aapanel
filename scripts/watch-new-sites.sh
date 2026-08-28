@@ -66,17 +66,31 @@ acted=0
 if [ -f "$CANON" ] && [ -f "$LIVE" ] && ! diff -q "$CANON" "$LIVE" >/dev/null 2>&1; then
   acted=1
   bak="$LIVE.bak-auto-$(date +%F-%H%M%S)"
+  # เวลาที่ WP Toolkit เขียนทับไฟล์ = จุดเริ่มของช่วงที่กฎ cache ผิด
+  # ไฟล์แคชที่เกิดหลังจากนี้เท่านั้นที่ถูกเก็บด้วยกฎโรงงาน ที่เก่ากว่านั้นยังถูกต้อง
+  drift_ts=$(stat -c %Y "$LIVE" 2>/dev/null || echo 0)
   cp -p "$LIVE" "$bak"
   install -m 644 "$CANON" "$LIVE"
   if "$NGINX" -t >/dev/null 2>&1; then
     /etc/init.d/nginx reload >/dev/null 2>&1
     # ต้องล้างแคชด้วย เพราะของที่ค้างอยู่ถูกเก็บตอนกฎยังเป็นอีกแบบ
     # (ฉบับโรงงานเก็บ 200 ไว้ 1 วัน และแนบ Cache-Control: max-age=0 ไปให้เบราว์เซอร์)
+    # ล้างเฉพาะไฟล์ที่เกิดระหว่างที่กฎยังผิด ไม่ล้างทั้งเครื่อง
+    #
+    # 🔴 เคยล้างทั้งเครื่องแล้วเจอของจริง 2026-08-28 00:55 UTC: ทีมเพิ่มไซต์ตอนที่มี
+    # ทราฟฟิก ~50,000 request/ชม. แคชของ 145 ไซต์หายพร้อมกัน ทุก request จึงวิ่งเข้า PHP
+    # PHP-FPM เต็ม 35 worker แล้ว load พุ่งเป็น 11.95 บนเครื่อง 4 cores
+    #
+    # ช่วงที่กฎผิดจริง ๆ สั้นมาก (ไม่กี่วินาทีถึงหนึ่งนาที) จำนวนไฟล์ที่ต้องล้างจึงน้อย
     CACHE=$(grep -oP 'fastcgi_cache_path\s+\K[^ ]+' "$VHOST/0.fastcgi_cache.conf" 2>/dev/null)
     CACHE=${CACHE:-/www/server/fastcgi_cache}
-    n=$(find "$CACHE" -type f 2>/dev/null | wc -l)
-    rm -rf "${CACHE:?}"/* 2>/dev/null
-    log "[แก้] enable-php-83-wpfastcgi.conf ถูกเขียนทับ - กู้กลับ reload แล้ว ล้างแคช $n ไฟล์"
+    if [ "$drift_ts" -gt 0 ]; then
+      n=$(find "$CACHE" -type f -newermt "@$drift_ts" 2>/dev/null | wc -l)
+      find "$CACHE" -type f -newermt "@$drift_ts" -delete 2>/dev/null
+      log "[แก้] enable-php-83-wpfastcgi.conf ถูกเขียนทับ - กู้กลับ reload แล้ว ล้างแคชเฉพาะช่วงที่กฎผิด $n ไฟล์ (เหลือ $(find "$CACHE" -type f 2>/dev/null | wc -l))"
+    else
+      log "[แก้] enable-php-83-wpfastcgi.conf ถูกเขียนทับ - กู้กลับ reload แล้ว (หาเวลาอ้างอิงไม่ได้ ไม่ล้างแคช)"
+    fi
   else
     cp -p "$bak" "$LIVE"
     log "[ล้มเหลว] กู้ config แล้ว nginx -t ไม่ผ่าน - เอาของเดิมกลับ ไม่ได้ reload"

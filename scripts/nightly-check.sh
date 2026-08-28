@@ -35,6 +35,7 @@ log "=== เริ่มตรวจ ==="
 if [ -f "$CANON" ] && [ -f "$LIVE" ]; then
   if ! diff -q "$CANON" "$LIVE" >/dev/null 2>&1; then
     cp -p "$LIVE" "$LIVE.bak-auto-$(date +%F-%H%M%S)"
+    drift_ts=$(stat -c %Y "$LIVE" 2>/dev/null || echo 0)
     install -m 644 "$CANON" "$LIVE"
     changed=1
     restored_cache=1
@@ -78,10 +79,17 @@ if [ "$changed" = "1" ]; then
     /etc/init.d/nginx reload >/dev/null 2>&1
     log "[ok] nginx -t ผ่าน reload แล้ว"
     if [ "$restored_cache" = "1" ]; then
+      # ล้างเฉพาะไฟล์ที่เกิดหลังจากกฎถูกเขียนทับ ไม่ล้างทั้งเครื่อง
+      # เหตุผลเต็มอยู่ใน watch-new-sites.sh - ล้างทั้งเครื่องตอนมีทราฟฟิกทำให้ load พุ่ง
       CACHE=$(grep -oP 'fastcgi_cache_path\s+\K[^ ]+' "$VHOST/0.fastcgi_cache.conf" 2>/dev/null)
       CACHE=${CACHE:-/www/server/fastcgi_cache}
-      rm -rf "${CACHE:?}"/* 2>/dev/null
-      log "[ok] ล้าง FastCGI cache เพราะกฎ cache เปลี่ยน"
+      if [ "${drift_ts:-0}" -gt 0 ]; then
+        n=$(find "$CACHE" -type f -newermt "@$drift_ts" 2>/dev/null | wc -l)
+        find "$CACHE" -type f -newermt "@$drift_ts" -delete 2>/dev/null
+        log "[ok] ล้าง FastCGI cache เฉพาะช่วงที่กฎผิด $n ไฟล์"
+      else
+        log "[ok] กฎ cache เปลี่ยน แต่หาเวลาอ้างอิงไม่ได้ - ไม่ล้างแคช"
+      fi
     fi
   else
     log "[ล้มเหลว] nginx -t ไม่ผ่านหลังแก้ - ดูรายละเอียด:"
