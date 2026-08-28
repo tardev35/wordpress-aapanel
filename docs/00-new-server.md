@@ -32,6 +32,7 @@
 | 9b | ตั้ง cron ตรวจ+ซ่อมเองทุกคืน (**ตั้งในหน้า Cron ของ panel**) | [05 §5.1b](05-operations.md) | 3 นาที |
 | 9c | 🔴 **ให้เครื่อง stamp ไซต์ใหม่เอง** (`install-site-watcher.sh`) | [05 §5.1c](05-operations.md) · [§0.6](#06--ให้เครื่อง-stamp-ไซต์ใหม่เอง--ข้อที่ห้ามข้ามที่สุดในหน้านี้) | 2 นาที |
 | 9d | ให้ปุ่ม Purge ในหน้า WP ใช้ได้ (`fix-cache-purge.sh`) | [04 §4.7](04-cache.md) | 2 นาที |
+| 9e | ค่าจูน MariaDB (`apply-mysql-config.sh --restart`) | [03 §3.4](03-tuning.md) | 2 นาที |
 | 10 | เว็บแรก | [06](06-new-site.md) (WordPress) · [09](09-static-sites.md) (static) | 10 นาที |
 
 **ลำดับที่ห้ามสลับ:**
@@ -76,6 +77,9 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-site-watcher.sh"
 
 # 5b) ให้ปุ่ม Purge ในหน้า WP ล้างแคชได้จริง (ดู 04 §4.7)
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/fix-cache-purge.sh"
+
+# 5d) ค่าจูน MariaDB ตาม 03 หัวข้อ 3.4 (เครื่องว่างอยู่ restart ได้ตามใจ)
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/apply-mysql-config.sh --restart"
 
 # 5c) แก้ IP ที่หัว panel ให้ตรงเครื่อง - image ของ Hostinger ติดค่าของเครื่องอื่นมา
 #     ถ้าปล่อยไว้ คนจะก๊อป IP ผิดไปรันคำสั่งผิดเครื่อง (ดู 07 ข้อ 18)

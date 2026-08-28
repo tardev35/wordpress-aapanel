@@ -127,6 +127,60 @@ ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
 
 ---
 
+## 6.1c แคช — สิ่งที่ต้องรู้ตอนทำเว็บเสร็จ
+
+### เครื่องจัดการให้เองแล้ว ไม่ต้องตั้งอะไร
+
+ถ้าเครื่องรัน [`install-site-watcher.sh`](../scripts/install-site-watcher.sh) แล้ว
+ไซต์ใหม่จะถูกตั้งค่าแคชให้ครบภายในไม่กี่วินาที — ติดตั้ง `nginx-helper` เปิดใช้งาน
+และตั้ง `purge_method` ให้ถูก ([04 §4.7](04-cache.md) อธิบายว่าทำไมต้องครบ 5 ข้อ)
+
+ตรวจว่าไซต์นี้ครบไหม:
+
+```bash
+ssh root@SERVER_IP "bash /root/wpaa/scripts/fix-cache-purge.sh --check DOMAIN.TLD"
+```
+
+ต้องได้ `path:OK ini:OK file:OK active:OK opt:OK` ทั้งแถว
+
+### 🔴 กด Purge หนึ่งครั้งหลังทำเว็บเสร็จ
+
+Nginx Helper ล้างแคชให้อัตโนมัติเฉพาะตอน **publish / แก้ / ลบโพสต์** เท่านั้น
+**มันไม่รู้เรื่องการเปลี่ยนธีม, import เนื้อหา, แก้ Customizer หรือแก้ setting**
+ซึ่งเป็นสิ่งที่ทำเยอะที่สุดตอนสร้างเว็บใหม่
+
+จบงานแล้วให้กด **Nginx Helper → Purge Cache (ทั้งไซต์)** หนึ่งครั้ง หรือ:
+
+```bash
+ssh root@SERVER_IP "bash /root/wpaa/scripts/clear-cache.sh DOMAIN.TLD"
+```
+
+> ปุ่ม **"Purge Current Page"** ในแถบดำด้านบน ล้างแค่หน้าเดียว ไม่ครอบทั้งไซต์
+
+### ⚠️ อย่าลงปลั๊กอินแคชตัวอื่น
+
+เครื่องนี้ใช้ FastCGI cache ของ nginx อยู่แล้ว การลง `wp-rocket`, `litespeed-cache`
+หรือ `wp-fastest-cache` ทับเข้าไปทำให้เวลาเนื้อหาไม่อัปเดต **แยกไม่ออกว่าใครเก็บไว้**
+
+`litespeed-cache` แทบไม่ทำอะไรเลยบนเครื่องที่ใช้ nginx เพราะมันต้องการ LiteSpeed server
+— เคยเจอไซต์ที่เปิด `litespeed-cache` แล้วปิด `nginx-helper` = ได้ตัวที่ไม่ทำงาน
+แล้วปิดตัวที่ทำงาน (ดู [04 §4.4b](04-cache.md))
+
+ถ้าต้องการ minify/lazyload ให้เปิดเฉพาะฟีเจอร์นั้น **อย่าเปิด page cache ของมัน**
+
+### แก้เนื้อหาแล้วหน้าเว็บไม่เปลี่ยน — ไล่ตามนี้
+
+```bash
+D=DOMAIN.TLD
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/"           | grep -o '<h1[^>]*>.\{0,60\}'
+curl -sk --resolve $D:443:127.0.0.1 "https://$D/?nocache=1" | grep -o '<h1[^>]*>.\{0,60\}'
+```
+
+อันล่างถูก อันบนผิด = **บันทึกสำเร็จแล้ว ติดที่แคชล้วน ๆ** ไม่ต้องไปไล่หาว่าลืมกด Update
+· วิธีแก้เต็มอยู่ที่ [07 ข้อ 17](07-troubleshooting.md)
+
+---
+
 ## 6.1b เว็บที่ไม่ใช่ WordPress
 
 ถ้าเว็บที่จะขึ้นเป็น HTML ล้วน (เช่น build จาก Astro) **อย่าใช้ WP Toolkit** เพราะมันจะลง
