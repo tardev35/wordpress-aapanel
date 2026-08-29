@@ -208,6 +208,7 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`apply-mysql-config.sh`](scripts/apply-mysql-config.sh) | ตั้งค่า MariaDB ตาม [03 §3.4](docs/03-tuning.md) · `--check` ดูก่อน · `--restart` ถึงจะมีผล | scp หรือ cmd /c |
 | [`harden-wp.sh`](scripts/harden-wp.sh) | กฎ nginx กันเว็บโดนแฮ็ก ทุกไซต์ (`--check` / `--remove`) | **ต้อง `scp`** |
 | [`check-exposure.sh`](scripts/check-exposure.sh) | ดูว่าเว็บเปิดเผยอะไรให้บอท · ใช้กับเว็บที่ไหนก็ได้ | scp หรือ cmd /c |
+| [`watch-ct.sh`](scripts/watch-ct.sh) | ดูสตรีมใบรับรองสดจาก CT log ทุกตัว (`--follow` · `--mine` · `--grep`) | scp หรือ cmd /c |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`install-site-watcher.sh`](scripts/install-site-watcher.sh) | ตั้ง path+timer ให้ stamp ไซต์ใหม่เอง ไม่ต้องมีคนสั่ง · **ครั้งเดียวต่อเครื่อง** (`--remove` ถอด) | **ต้อง `scp`** |
 | [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |

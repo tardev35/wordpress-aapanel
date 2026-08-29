@@ -176,6 +176,39 @@ meta generator             -    เปิดอยู่  WordPress 6.5.10   <--
 > openssl x509 -in /www/server/panel/vhost/cert/$D/fullchain.pem -noout -startdate
 > ```
 
+### ดูท่อจริงด้วยตาตัวเอง
+
+[`scripts/watch-ct.sh`](../scripts/watch-ct.sh) ต่อเข้า CT log ทุกตัวที่ใช้งานได้แล้วแกะชื่อโดเมนออกมา
+
+```powershell
+ssh root@SERVER_IP "bash /root/wpaa/scripts/watch-ct.sh --logs"          # มี log ไหนใช้ได้บ้าง
+ssh root@SERVER_IP "bash /root/wpaa/scripts/watch-ct.sh"                 # ดึงรอบเดียวทุก log
+ssh root@SERVER_IP "bash /root/wpaa/scripts/watch-ct.sh --follow"        # วนดูเรื่อย ๆ
+ssh root@SERVER_IP "bash /root/wpaa/scripts/watch-ct.sh --grep login"    # ไฮไลต์คำที่สนใจ
+ssh root@SERVER_IP "bash /root/wpaa/scripts/watch-ct.sh --mine"          # ไฮไลต์โดเมนบนเครื่องนี้
+```
+
+ผลจริงเมื่อ 2026-08-29 14:47 UTC — โดเมนจริงของคนทั่วโลกที่เพิ่งได้ cert:
+
+```
+14:47:15  Google       *.acloud-i5rk.lan.ug.link           Let's Encrypt
+14:47:23  Google       playfake.in                          Let's Encrypt
+14:48:28  DigiCert     737f0x.genebest.com                  Let's Encrypt
+14:46:28  Sectigo      atelierimaginastic.fr                Let's Encrypt
+14:49:17  DigiCert     *.gem789login.com                    Let's Encrypt   <== ตรงคำค้น "login"
+```
+
+**สคริปต์อ่านรายชื่อ log จาก `log_list.json` ของ Google เองทุกครั้ง** ไม่เขียน URL ตายตัว
+เพราะ log แบ่งเป็น shard ปีละ 2 ครั้ง — เขียนตายตัวไว้จะพังทุกครึ่งปี
+(ตรวจ 29 ส.ค. 2026: ใช้ได้ 9 log · Let's Encrypt Oak ไม่อยู่ในรายการช่วงนี้)
+
+> ⚠️ **นี่คือการสุ่มดู ไม่ใช่การรับครบทุกใบ** — วัดได้ 118 ใบ/วินาที ต่อ log เดียว
+> คูณ 9 log แล้วเกิน 1,000 ใบ/วินาที การรับให้ครบต้องไล่ทุก index ต่อเนื่อง
+> ซึ่งกินแบนด์วิดท์มหาศาล **ถ้าอยากรู้ทันทีที่มีใครออก cert ให้โดเมนเรา ให้ใช้วิธีข้างล่างแทน**
+>
+> และเวลาจากแต่ละ log ไม่ตรงกันเป็นเรื่องปกติ — `get-sth` คืนค่าที่ log เซ็นไว้เป็นรอบ
+> วัดจริง: Google ช้า 1 นาที · Cloudflare ช้า 49 นาที
+
 ### เอาไปใช้ฝั่งเราบ้าง: เฝ้า cert ของตัวเอง
 
 ข้อมูลชุดเดียวกันใช้ป้องกันได้ — **ถ้ามีใครออก cert ให้โดเมนเราโดยที่เราไม่ได้ขอ
