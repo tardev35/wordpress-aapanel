@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ct-live · สตรีมใบรับรองสด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#eef1f6; --panel:#fff; --panel-2:#f6f8fb; --line:#d3d9e4;
+  --ink:#171c26; --dim:#5d6879; --faint:#8c96a8;
+  --amber:#b4741a; --amber-soft:#f3e4cc;
+  --teal:#0f7a6c; --teal-soft:#d6ece8;
+  --alert:#b03a2b; --alert-soft:#f7dfda;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ground:#0f131b; --panel:#171d28; --panel-2:#1d2431; --line:#2b3444;
+  --ink:#e8ecf3; --dim:#98a3b6; --faint:#6b7689;
+  --amber:#e0a458; --amber-soft:#3a2c17;
+  --teal:#59bfb0; --teal-soft:#12302d;
+  --alert:#e06c56; --alert-soft:#3a1d18;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.6}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+.app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+@media(max-width:820px){.app{grid-template-columns:1fr}}
+
+/* ---- เมนูข้าง ---- */
+aside{background:var(--panel);border-right:1px solid var(--line);padding:20px 0;position:sticky;top:0;height:100vh;overflow:auto}
+@media(max-width:820px){aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}}
+.brand{padding:0 20px 18px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.brand b{font-size:17px;font-weight:700;letter-spacing:-.01em;display:block}
+.brand span{font-size:12px;color:var(--faint);font-family:"IBM Plex Mono",monospace}
+nav a{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:9px 20px;color:var(--dim);text-decoration:none;font-size:14.5px;cursor:pointer;border-left:2px solid transparent}
+nav a:hover{background:var(--panel-2);color:var(--ink)}
+nav a.on{background:var(--amber-soft);color:var(--amber);border-left-color:var(--amber);font-weight:600}
+nav a .k{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint)}
+nav a.on .k{color:var(--amber)}
+.navhead{padding:16px 20px 6px;font-family:"IBM Plex Mono",monospace;font-size:11px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+
+/* ---- เนื้อหา ---- */
+main{padding:24px 28px 60px;min-width:0}
+h1{font-size:22px;font-weight:700;margin:0 0 4px}
+.sub{color:var(--dim);font-size:14px;margin:0 0 20px}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+button{font:inherit;font-size:13.5px;cursor:pointer;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);padding:7px 14px;border-radius:7px}
+button:hover{border-color:var(--amber);color:var(--amber)}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+button.go{background:var(--amber);border-color:var(--amber);color:var(--ground)}
+input[type=text]{font:inherit;font-size:13.5px;padding:7px 12px;border-radius:7px;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink);min-width:180px}
+input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+.live{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--teal);
+  font-family:"IBM Plex Mono",monospace}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--teal);animation:blip 1.4s infinite}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.2}}
+.live.off{color:var(--faint)} .live.off i{background:var(--faint);animation:none}
+
+/* ---- แท็บ ---- */
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:0;padding-bottom:0}
+.tab{white-space:nowrap;padding:8px 13px;border:0;border-bottom:2px solid transparent;
+  background:none;color:var(--dim);border-radius:0;font-size:13.5px}
+.tab:hover{color:var(--ink);border-color:var(--line)}
+.tab.on{color:var(--amber);border-bottom-color:var(--amber);font-weight:600}
+.tab .c{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);margin-left:6px}
+
+/* ---- ตาราง ---- */
+.card{background:var(--panel);border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;overflow:hidden}
+.rows{max-height:min(62vh,640px);overflow:auto}
+.row{display:grid;grid-template-columns:76px 128px 1fr 130px;gap:12px;align-items:baseline;
+  padding:6px 16px;font-family:"IBM Plex Mono",monospace;font-size:12.8px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row.new{animation:in .3s ease-out}
+@keyframes in{from{opacity:0;background:var(--amber-soft)}to{opacity:1}}
+.row .t{color:var(--faint);font-size:12px}
+.row .lg{color:var(--teal);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .d{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .ca{color:var(--faint);font-size:11.5px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.hit{background:var(--alert-soft)} .row.hit .d{color:var(--alert);font-weight:500}
+.row .plus{color:var(--faint);font-size:11px}
+.empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
+
+/* ---- หน้าอื่น ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.box h3{margin:0 0 3px;font-size:15px;font-weight:600}
+.box .u{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);
+  word-break:break-all;display:block;margin-bottom:10px}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-top:1px solid var(--line)}
+.kv span:first-child{color:var(--dim)}
+.kv b{font-family:"IBM Plex Mono",monospace;font-weight:500}
+.warn{background:var(--amber-soft);border:1px solid var(--amber);border-radius:9px;
+  padding:14px 16px;font-size:14px;margin-bottom:18px}
+.warn b{color:var(--amber)}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px 16px;
+  overflow-x:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.8;margin:0 0 16px}
+.page{display:none} .page.on{display:block}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><b>ct-live</b><span>localhost:8765</span></div>
+    <nav id="nav">
+      <a data-page="stream" class="on">สตรีมสด<span class="k" id="navCount">0</span></a>
+      <a data-page="logs">ล็อกที่ใช้ได้<span class="k" id="navLogs">–</span></a>
+      <a data-page="about">ท่อนี้คืออะไร</a>
+      <div class="navhead">กรอง</div>
+      <a data-page="stream" id="navMine">โดเมนของเรา<span class="k" id="navMineC">0</span></a>
+    </nav>
+  </aside>
+
+  <main>
+    <!-- ============ สตรีม ============ -->
+    <div class="page on" id="page-stream">
+      <h1>สตรีมใบรับรองสด</h1>
+      <p class="sub">ดึงจาก CT log ทุกตัวที่ใช้งานได้พร้อมกัน · เวลาเป็น UTC ตามที่ log บันทึกไว้</p>
+
+      <div class="bar">
+        <button class="go" id="btnLive">เริ่มสตรีม</button>
+        <button id="btnOnce">ดึงรอบเดียว</button>
+        <input type="text" id="q" placeholder="ไฮไลต์คำ เช่น login, bank">
+        <button id="btnClear">ล้าง</button>
+        <span class="live off" id="liveDot"><i></i><span id="liveTxt">หยุดอยู่</span></span>
+      </div>
+
+      <div class="tabs" id="tabs"></div>
+      <div class="card">
+        <div class="rows" id="rows"><div class="empty">กด “เริ่มสตรีม” เพื่อดึงข้อมูลจาก CT log</div></div>
+      </div>
+    </div>
+
+    <!-- ============ ล็อก ============ -->
+    <div class="page" id="page-logs">
+      <h1>ล็อกที่ใช้งานได้</h1>
+      <p class="sub">อ่านจาก <span class="mono">log_list.json</span> ของ Google ทุกครั้ง ไม่ได้เขียน URL ตายตัว
+        เพราะ log แบ่ง shard ปีละ 2 ครั้ง</p>
+      <div class="grid" id="logGrid"></div>
+    </div>
+
+    <!-- ============ อธิบาย ============ -->
+    <div class="page" id="page-about">
+      <h1>ท่อนี้คืออะไร</h1>
+      <p class="sub">และทำไมเว็บใหม่ถึงถูกบอทหาเจอภายในชั่วโมงแรก</p>
+
+      <div class="warn">
+        <b>ทุกใบรับรองที่ออกโดย CA ที่เบราว์เซอร์เชื่อถือ ต้องถูกบันทึกลง CT log สาธารณะ</b>
+        — เป็นข้อบังคับ ไม่ใช่ตัวเลือก ใครก็อ่านได้ ไม่ต้องล็อกอิน
+        นั่นแปลว่าโดเมนใหม่ถูกประกาศให้โลกรู้ตั้งแต่วินาทีที่ขอ cert
+      </div>
+
+      <p style="max-width:64ch;color:var(--dim)">
+        หน้านี้ทำแค่ 3 ขั้นเดียวกับที่บอททำ — ต่างกันแค่เราดูเฉย ๆ
+      </p>
+      <pre># 1. รายชื่อ log ทางการ
+curl -s https://www.gstatic.com/ct/log_list/v3/log_list.json
+
+# 2. log นี้เก็บไปกี่ใบแล้ว
+U=https://ct.googleapis.com/logs/us1/argon2026h2
+S=$(curl -s "$U/ct/v1/get-sth" | grep -oE '"tree_size":[0-9]+' | cut -d: -f2)
+
+# 3. ขอใบท้าย ๆ มาแกะเอาชื่อโดเมน
+curl -s "$U/ct/v1/get-entries?start=$((S-5))&end=$((S-1))"</pre>
+
+      <div class="grid">
+        <div class="box">
+          <h3>สุ่มดู ไม่ใช่รับครบ</h3>
+          <p style="margin:0;font-size:13.5px;color:var(--dim)">
+            วัดจริงได้ 118 ใบ/วินาที ต่อ log เดียว คูณ 9 log เกิน 1,000 ใบ/วินาที
+            หน้านี้ดึงแค่ใบท้าย ๆ ของแต่ละรอบ จึงเห็นไม่ครบแน่นอน</p>
+        </div>
+        <div class="box">
+          <h3>เวลาแต่ละ log ไม่ตรงกัน</h3>
+          <p style="margin:0;font-size:13.5px;color:var(--dim)">
+            <span class="mono">get-sth</span> คืนค่าที่ log เซ็นไว้เป็นรอบ
+            วัดจริง 29 ส.ค.: Google ช้า 1 นาที · Cloudflare ช้า 49 นาที</p>
+        </div>
+        <div class="box">
+          <h3>อยากรู้ทันทีที่โดเมนเราถูกออก cert</h3>
+          <p style="margin:0;font-size:13.5px;color:var(--dim)">
+            อย่าใช้หน้านี้ — ใช้ Cloudflare CT Monitoring หรือ RSS ของ crt.sh
+            ซึ่งออกแบบมาเพื่อการนั้นและไม่พลาด</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+var LOGS=[], rows=[], tab="all", live=false, timer=null, mineOnly=false, mine=[];
+var $=function(s){return document.querySelector(s)};
+
+function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}
+
+function setPage(p){
+  document.querySelectorAll(".page").forEach(function(x){x.classList.toggle("on",x.id==="page-"+p)});
+  document.querySelectorAll("#nav a").forEach(function(a){a.classList.remove("on")});
+}
+document.querySelectorAll("#nav a").forEach(function(a){
+  a.addEventListener("click",function(){
+    if(a.id==="navMine"){ mineOnly=!mineOnly; a.classList.toggle("on",mineOnly); setPage("stream");
+      document.querySelector('#nav a[data-page="stream"]').classList.toggle("on",!mineOnly);
+      render(); return; }
+    setPage(a.dataset.page); a.classList.add("on");
+    if(a.dataset.page==="logs") loadLogs();
+  });
+});
+
+function drawTabs(){
+  var counts={all:rows.length};
+  rows.forEach(function(r){counts[r.id]=(counts[r.id]||0)+1});
+  var html='<button class="tab'+(tab==="all"?" on":"")+'" data-t="all">ทั้งหมด<span class="c">'+rows.length+'</span></button>';
+  LOGS.forEach(function(l){
+    html+='<button class="tab'+(tab===l.id?" on":"")+'" data-t="'+l.id+'">'+esc(l.op)+' · '+esc(l.id)+
+          '<span class="c">'+(counts[l.id]||0)+'</span></button>';
+  });
+  $("#tabs").innerHTML=html;
+  $("#tabs").querySelectorAll(".tab").forEach(function(b){
+    b.addEventListener("click",function(){tab=b.dataset.t;drawTabs();render()});
+  });
+}
+
+function render(){
+  var q=($("#q").value||"").toLowerCase();
+  var list=rows.filter(function(r){
+    if(tab!=="all" && r.id!==tab) return false;
+    if(mineOnly && !r.mine) return false;
+    return true;
+  });
+  $("#navCount").textContent=rows.length;
+  if(!list.length){
+    $("#rows").innerHTML='<div class="empty">'+(rows.length?"ไม่มีรายการในแท็บนี้":"ยังไม่มีข้อมูล — กด “เริ่มสตรีม”")+'</div>';
+    return;
+  }
+  $("#rows").innerHTML=list.map(function(r){
+    var hit = r.mine || (q && r.d.toLowerCase().indexOf(q)>=0);
+    return '<div class="row'+(hit?" hit":"")+(r._n?" new":"")+'">'+
+      '<span class="t">'+esc(r.t)+'</span>'+
+      '<span class="lg">'+esc(r.id)+'</span>'+
+      '<span class="d">'+esc(r.d)+(r.extra?' <span class="plus">+'+r.extra+'</span>':'')+'</span>'+
+      '<span class="ca">'+esc(r.ca)+'</span></div>';
+  }).join("");
+  rows.forEach(function(r){r._n=false});
+}
+
+function fetchOnce(){
+  return fetch("/api/entries?n=12").then(function(r){return r.json()}).then(function(nw){
+    nw.forEach(function(r){
+      var d=r.d.toLowerCase().replace(/^\*\./,"");
+      r.mine = mine.some(function(m){return d===m || d.endsWith("."+m)});
+      r._n=true;
+    });
+    rows=nw.concat(rows).slice(0,900);
+    drawTabs(); render();
+  }).catch(function(){});
+}
+
+function setLive(on){
+  live=on;
+  $("#btnLive").textContent=on?"หยุด":"เริ่มสตรีม";
+  $("#liveDot").className="live"+(on?"":" off");
+  $("#liveTxt").textContent=on?"กำลังดึงทุก 15 วินาที":"หยุดอยู่";
+  clearInterval(timer);
+  if(on){ fetchOnce(); timer=setInterval(fetchOnce,15000); }
+}
+$("#btnLive").addEventListener("click",function(){setLive(!live)});
+$("#btnOnce").addEventListener("click",fetchOnce);
+$("#btnClear").addEventListener("click",function(){rows=[];drawTabs();render()});
+$("#q").addEventListener("input",render);
+
+function loadLogs(){
+  fetch("/api/logs").then(function(r){return r.json()}).then(function(l){
+    LOGS=l; $("#navLogs").textContent=l.length; drawTabs();
+    $("#logGrid").innerHTML=l.map(function(x){
+      var age = (x.sth_age===undefined) ? "—" :
+        (x.sth_age<90 ? x.sth_age+" วิ" : Math.round(x.sth_age/60)+" นาที");
+      return '<div class="box"><h3>'+esc(x.op)+' · '+esc(x.id)+'</h3>'+
+        '<span class="u">'+esc(x.url)+'</span>'+
+        '<div class="kv"><span>จำนวน entry</span><b>'+(x.size?x.size.toLocaleString("th-TH"):"ยังไม่ได้ถาม")+'</b></div>'+
+        '<div class="kv"><span>STH เก่ากว่าปัจจุบัน</span><b>'+age+'</b></div></div>';
+    }).join("");
+  });
+}
+
+// โดเมนของเราเอง - แก้รายชื่อตรงนี้ได้ หรือปล่อยว่างถ้าไม่ต้องใช้
+mine=["bbc29pro.com","neda88-pro.com"];
+$("#navMineC").textContent=mine.length;
+loadLogs();
+</script>
+</body>
+</html>
