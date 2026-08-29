@@ -88,6 +88,16 @@ input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .row .ca{color:var(--faint);font-size:11.5px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row.hit{background:var(--alert-soft)} .row.hit .d{color:var(--alert);font-weight:500}
 .row .plus{color:var(--faint);font-size:11px}
+.vd{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;
+  padding:1px 8px;border-radius:20px;text-align:center;min-width:52px}
+.vd.yes{background:var(--alert-soft);color:var(--alert);font-weight:500}
+.vd.maybe{background:var(--amber-soft);color:var(--amber)}
+.vd.no{background:var(--panel-2);color:var(--faint)}
+.airow{display:grid;grid-template-columns:64px 1fr 1fr;gap:12px;align-items:baseline;
+  padding:7px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.airow:last-child{border-bottom:0}
+.airow .d{font-family:"IBM Plex Mono",monospace;font-size:12.8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.airow .w{color:var(--dim);font-size:12.5px}
 .empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
 
 /* ---- หน้าอื่น ---- */
@@ -118,6 +128,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <a data-page="about">ท่อนี้คืออะไร</a>
       <div class="navhead">กรอง</div>
       <a data-page="stream" id="navMine">เฉพาะโดเมนของเรา<span class="k" id="navMineC">ปิด</span></a>
+      <a data-page="ai" id="navAi">คัดกรองเว็บพนัน<span class="k" id="navAiC">0</span></a>
     </nav>
   </aside>
 
@@ -148,6 +159,34 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <p class="sub">อ่านจาก <span class="mono">log_list.json</span> ของ Google ทุกครั้ง ไม่ได้เขียน URL ตายตัว
         เพราะ log แบ่ง shard ปีละ 2 ครั้ง</p>
       <div class="grid" id="logGrid"></div>
+    </div>
+
+    <!-- ============ AI ============ -->
+    <div class="page" id="page-ai">
+      <h1>คัดกรองเว็บพนัน</h1>
+      <p class="sub">ส่ง <b>ชื่อโดเมน</b> ที่ดึงมาให้โมเดลช่วยดูว่าตัวไหนน่าจะเป็นเว็บพนัน
+        — ส่งไปแค่ชื่อ ไม่ได้เปิดเว็บ ไม่ได้ส่งข้อมูลอื่น</p>
+
+      <div class="warn" id="aiWarn" hidden></div>
+
+      <div class="bar">
+        <button class="go" id="btnAi">คัดกรองรายการที่ดึงมา</button>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--dim);cursor:pointer">
+          <input type="checkbox" id="aiAuto"> คัดกรองอัตโนมัติทุกรอบที่ดึง
+        </label>
+        <button id="btnAiClear">ล้างผล</button>
+        <span class="live off" id="aiDot"><i></i><span id="aiTxt">ยังไม่ได้เรียก</span></span>
+      </div>
+
+      <div class="tabs" id="aiTabs"></div>
+      <div class="card">
+        <div class="rows" id="aiRows"><div class="empty">กด “คัดกรองรายการที่ดึงมา”</div></div>
+      </div>
+      <p class="sub" style="margin-top:14px;font-size:13px">
+        โมเดลดูจาก<b>ชื่อโดเมนอย่างเดียว</b> จึงผิดได้ทั้งสองทาง —
+        เว็บทั่วไปที่มีตัวเลขอาจถูกทำเครื่องหมาย และเว็บพนันที่ตั้งชื่อธรรมดาจะรอด
+        <b>ใช้เป็นตัวช่วยจัดลำดับว่าควรดูตัวไหนก่อน ไม่ใช่คำตัดสิน</b>
+      </p>
     </div>
 
     <!-- ============ อธิบาย ============ -->
@@ -280,6 +319,7 @@ function fetchOnce(){
     });
     rows=nw.concat(rows).slice(0,900);
     drawTabs(); render();
+    if(aiAuto && nw.length) aiRun();
   }).catch(function(){});
 }
 
@@ -310,6 +350,72 @@ function loadLogs(){
     }).join("");
   });
 }
+
+/* ---------------- คัดกรองด้วย AI ---------------- */
+var ai=[], aiTab="yes", aiAuto=false, aiBusy=false;
+
+function aiDraw(){
+  var c={yes:0,maybe:0,no:0};
+  ai.forEach(function(r){ c[r.v]=(c[r.v]||0)+1 });
+  $("#navAiC").textContent=c.yes+c.maybe;
+  $("#aiTabs").innerHTML=[["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
+    .map(function(x){
+      var n = x[0]==="all" ? ai.length : (c[x[0]]||0);
+      return '<button class="tab'+(aiTab===x[0]?" on":"")+'" data-a="'+x[0]+'">'+x[1]+'<span class="c">'+n+'</span></button>';
+    }).join("");
+  $("#aiTabs").querySelectorAll(".tab").forEach(function(b){
+    b.addEventListener("click",function(){aiTab=b.dataset.a;aiDraw()});
+  });
+  var list=ai.filter(function(r){return aiTab==="all"||r.v===aiTab});
+  if(!list.length){
+    $("#aiRows").innerHTML='<div class="empty">'+(ai.length?"ไม่มีรายการในกลุ่มนี้":"ยังไม่มีผล — กด “คัดกรองรายการที่ดึงมา”")+'</div>';
+    return;
+  }
+  $("#aiRows").innerHTML=list.map(function(r){
+    return '<div class="airow"><span class="vd '+esc(r.v)+'">'+esc(r.v)+'</span>'+
+      '<span class="d">'+esc(r.d)+'</span><span class="w">'+esc(r.w||"")+'</span></div>';
+  }).join("");
+}
+
+function aiRun(){
+  if(aiBusy) return;
+  var doms=[], seen={};
+  ai.forEach(function(r){seen[r.d]=1});
+  rows.forEach(function(r){ if(!seen[r.d] && doms.length<60) { seen[r.d]=1; doms.push(r.d); } });
+  if(!doms.length){ $("#aiTxt").textContent="ไม่มีโดเมนใหม่ให้คัดกรอง"; return; }
+  aiBusy=true;
+  $("#aiDot").className="live"; $("#aiTxt").textContent="กำลังคัดกรอง "+doms.length+" โดเมน...";
+  fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
+                          body:JSON.stringify(doms)})
+    .then(function(r){return r.json()})
+    .then(function(res){
+      aiBusy=false; $("#aiDot").className="live off";
+      if(res.error){ $("#aiTxt").textContent="ผิดพลาด"; $("#aiWarn").hidden=false;
+                     $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(res.error); return; }
+      $("#aiWarn").hidden=true;
+      (res.rows||[]).forEach(function(r){
+        if(!r||!r.d) return;
+        r.v=(r.v||"no").toLowerCase();
+        if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
+        ai.unshift(r);
+      });
+      ai=ai.slice(0,600);
+      $("#aiTxt").textContent="เสร็จ · token เข้า "+(res["in"]||"?")+" ออก "+(res.out||"?");
+      aiDraw();
+    })
+    .catch(function(){ aiBusy=false; $("#aiDot").className="live off";
+                       $("#aiTxt").textContent="เรียก server ไม่ได้"; });
+}
+$("#btnAi").addEventListener("click",aiRun);
+$("#btnAiClear").addEventListener("click",function(){ai=[];aiDraw()});
+$("#aiAuto").addEventListener("change",function(){aiAuto=this.checked});
+
+fetch("/api/ai-status").then(function(r){return r.json()}).then(function(s){
+  if(!s.ready){ $("#aiWarn").hidden=false;
+    $("#aiWarn").innerHTML="<b>ยังไม่ได้ตั้งคีย์</b> — ใส่ <span class='mono'>OPENROUTER_API_KEY</span> "+
+      "ในไฟล์ <span class='mono'>tools/ct-live/.env</span> แล้วรัน server ใหม่"; }
+  else { $("#aiTxt").textContent="พร้อม · "+s.model; }
+});
 
 // โดเมนของเราเอง - แก้รายชื่อตรงนี้ได้ หรือปล่อยว่างถ้าไม่ต้องใช้
 mine=["bbc29pro.com","neda88-pro.com"];

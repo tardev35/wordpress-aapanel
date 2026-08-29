@@ -28,10 +28,36 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT = 8765
+OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 LOG_LIST = "https://www.gstatic.com/ct/log_list/v3/log_list.json"
 HERE = Path(__file__).parent
 UA = {"User-Agent": "ct-live/1.0 (+local viewer)"}
 
+def load_env():
+    """อ่านคีย์จาก environment หรือไฟล์ .env ข้าง ๆ - ไม่ hardcode ลงโค้ด
+
+    .env อยู่ใน .gitignore ของ repo แล้ว จึงไม่ถูก commit ขึ้นไป
+    ถ้าไม่มีคีย์ ระบบยังทำงานปกติ แค่ปิดส่วนคัดกรองด้วย AI
+    """
+    import os
+    cfg = {"key": os.environ.get("OPENROUTER_API_KEY", ""),
+           "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-3.1-flash-lite")}
+    f = HERE / ".env"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip('"').strip("'")
+            if k == "OPENROUTER_API_KEY" and not cfg["key"]:
+                cfg["key"] = v
+            elif k == "OPENROUTER_MODEL":
+                cfg["model"] = v
+    return cfg
+
+
+ENV = load_env()
 _logs_cache = {"at": 0.0, "logs": []}
 _seen = set()          # กันไม่ให้โดเมนเดิมโผล่ซ้ำเวลา log ยังไม่ขยับ
 _seen_order = []
@@ -247,6 +273,60 @@ def sweep(n=12):
     return rows
 
 
+# ---------------------------------------------------------------- AI
+PROMPT = """คุณคือตัวคัดกรองชื่อโดเมน ดูจาก "ชื่อโดเมน" อย่างเดียว ห้ามเปิดเว็บ
+
+งาน: บอกว่าโดเมนไหนน่าจะเป็นเว็บพนันออนไลน์ (คาสิโน สล็อต บาคาร่า แทงบอล หวย)
+
+สัญญาณที่มักพบในโดเมนพนันภาษาไทย:
+- คำ: slot, casino, bet, bacara/baccarat, huay/lotto, pg, joker, sexy, ufa, sbo, 888, 168, 789, 99, vip, auto, wallet, true wallet
+- รูปแบบ: คำมั่ว + ตัวเลข เช่น xyz888.com, abc168pro.net
+- ลงท้าย: -game, -play, -win, -club, -bet, -vip, -pro, -auto
+
+ระวัง: เว็บทั่วไปก็มีตัวเลขได้ อย่าตัดสินจากตัวเลขอย่างเดียว
+ถ้าไม่แน่ใจให้ตอบ no
+
+ตอบเป็น JSON array เท่านั้น ไม่ต้องมีข้อความอื่น:
+[{"d":"ชื่อโดเมน","v":"yes|maybe|no","w":"เหตุผลสั้นไม่เกิน 8 คำ"}]
+ต้องมีครบทุกโดเมนที่ให้มา"""
+
+
+def classify(domains):
+    """ส่งชื่อโดเมนไปให้โมเดลคัดกรอง - ส่งไปแค่ "ชื่อ" ไม่ได้เปิดเว็บ ไม่ได้ส่งข้อมูลอื่น"""
+    if not ENV["key"]:
+        return {"error": "ยังไม่ได้ตั้ง OPENROUTER_API_KEY - ดู tools/ct-live/.env"}
+    body = json.dumps({
+        "model": ENV["model"],
+        "temperature": 0,
+        "messages": [{"role": "system", "content": PROMPT},
+                     {"role": "user", "content": chr(10).join(domains)}],
+    }).encode()
+    req = urllib.request.Request(OR_URL, data=body, headers={
+        "Authorization": "Bearer " + ENV["key"],
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8765",
+        "X-Title": "ct-live",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            out = json.loads(r.read().decode("utf-8", "ignore"))
+    except urllib.error.HTTPError as ex:
+        return {"error": "OpenRouter ตอบ %s: %s" % (ex.code, ex.read()[:180].decode("utf8", "ignore"))}
+    except Exception as ex:
+        return {"error": "เรียก OpenRouter ไม่ได้: %s" % ex}
+    txt = out.get("choices", [{}])[0].get("message", {}).get("content", "")
+    m = re.search(r"\[.*\]", txt, re.S)          # โมเดลชอบห่อด้วย ```json
+    if not m:
+        return {"error": "โมเดลตอบมาไม่ใช่ JSON", "raw": txt[:200]}
+    try:
+        rows = json.loads(m.group(0))
+    except Exception:
+        return {"error": "อ่าน JSON จากโมเดลไม่ได้", "raw": txt[:200]}
+    usage = out.get("usage", {})
+    return {"rows": rows, "model": out.get("model", ENV["model"]),
+            "in": usage.get("prompt_tokens"), "out": usage.get("completion_tokens")}
+
+
 # ---------------------------------------------------------------- http
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -291,8 +371,26 @@ class Handler(BaseHTTPRequestHandler):
                 print("sweep error:", ex)
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(rows, ensure_ascii=False).encode())
+        elif self.path == "/api/ai-status":
+            self._send(200, "application/json; charset=utf-8", json.dumps({
+                "ready": bool(ENV["key"]), "model": ENV["model"]}).encode())
         else:
             self._send(404, "text/plain; charset=utf-8", b"not found")
+
+    def do_POST(self):
+        if self.path != "/api/classify":
+            self._send(404, "text/plain; charset=utf-8", b"not found")
+            return
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            doms = json.loads(self.rfile.read(n).decode("utf-8"))[:60]
+        except Exception:
+            self._send(400, "application/json; charset=utf-8",
+                       json.dumps({"error": "payload ไม่ถูกต้อง"}, ensure_ascii=False).encode())
+            return
+        res = classify([str(d)[:120] for d in doms if d])
+        self._send(200, "application/json; charset=utf-8",
+                   json.dumps(res, ensure_ascii=False).encode())
 
 
 def main():

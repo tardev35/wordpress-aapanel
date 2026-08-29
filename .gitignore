@@ -14,3 +14,7 @@
 .DS_Store
 Thumbs.db
 *.swp
+
+# ไฟล์คอมไพล์ของ python
+__pycache__/
+*.pyc
