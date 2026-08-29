@@ -84,6 +84,21 @@ def _der_len(b, i):
 SAN_OID = bytes([0x06, 0x03, 0x55, 0x1D, 0x11])   # 2.5.29.17 subjectAltName
 
 
+def punydecode(name):
+    """xn--12c4cl3b5a4bq.com -> ไทยพนัน.com  (ถอดทีละ label ตัวที่พังก็ปล่อยไว้เดิม)"""
+    if "xn--" not in name:
+        return name
+    out = []
+    for lab in name.split("."):
+        if lab.startswith("xn--"):
+            try:
+                lab = lab.encode("ascii").decode("idna")
+            except Exception:
+                pass
+        out.append(lab)
+    return ".".join(out)
+
+
 def dns_names(der):
     """ดึงชื่อโดเมนจาก subjectAltName ของ certificate โดยไม่ง้อ openssl
 
@@ -164,12 +179,16 @@ def decode_entry(e):
     names = dns_names(der)
     if not names:
         return None
-    return {
+    row = {
         "t": datetime.fromtimestamp(ts, timezone.utc).strftime("%H:%M:%S"),
         "d": names[0],
         "extra": len(names) - 1,
         "ca": issuer_org(der),
     }
+    u = punydecode(names[0])
+    if u != names[0]:
+        row["u"] = u            # โดเมนไทยจดเป็น xn-- ต้องถอดถึงจะอ่านออก
+    return row
 
 
 # ---------------------------------------------------------------- logs
@@ -286,8 +305,16 @@ PROMPT = """คุณคือตัวคัดกรองชื่อโด�
 ระวัง: เว็บทั่วไปก็มีตัวเลขได้ อย่าตัดสินจากตัวเลขอย่างเดียว
 ถ้าไม่แน่ใจให้ตอบ no
 
+ต้องบอก "ตลาด" ที่เว็บนั้นเล็งไว้ด้วย (m):
+- th = ตลาดไทย สัญญาณ: ufa, ufabet, pgslot, slotxo, superslot, betflix, ambbet,
+  sagame, huay, ruay, jetsada, lsm99, truewallet/wallet, thai, siam, bangkok,
+  baht/thb, muay, นามสกุล .th หรือชื่อเป็นภาษาไทย/คำไทยสะกดด้วยอังกฤษ
+- cn = ตลาดจีน สัญญาณ: ชื่อเป็นตัวเลขล้วน (858002.com), นำหน้าด้วย m./ww/wap,
+  ag, bc, hg, 6688, 365, พินอิน, .cc .top ที่ตามด้วยอักษรมั่ว
+- other = อื่น ๆ หรือดูไม่ออก
+
 ตอบเป็น JSON array เท่านั้น ไม่ต้องมีข้อความอื่น:
-[{"d":"ชื่อโดเมน","v":"yes|maybe|no","w":"เหตุผลสั้นไม่เกิน 8 คำ"}]
+[{"d":"ชื่อโดเมน","v":"yes|maybe|no","m":"th|cn|other","w":"เหตุผลสั้นไม่เกิน 8 คำ"}]
 ต้องมีครบทุกโดเมนที่ให้มา"""
 
 

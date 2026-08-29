@@ -98,6 +98,9 @@ input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .airow:last-child{border-bottom:0}
 .airow .d{font-family:"IBM Plex Mono",monospace;font-size:12.8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .airow .w{color:var(--dim);font-size:12.5px}
+.mk{display:inline-block;font-size:10px;padding:0 6px;border-radius:20px;margin-left:6px;
+  background:var(--panel-2);color:var(--faint);vertical-align:1px;font-family:system-ui,sans-serif}
+.mk.th{background:var(--alert-soft);color:var(--alert);font-weight:500}
 .empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
 
 /* ---- หน้าอื่น ---- */
@@ -305,7 +308,9 @@ function render(){
     return '<div class="row'+(hit?" hit":"")+(r._n?" new":"")+'">'+
       '<span class="t">'+esc(r.t)+'</span>'+
       '<span class="lg">'+esc(r.id)+'</span>'+
-      '<span class="d">'+esc(r.d)+(r.extra?' <span class="plus">+'+r.extra+'</span>':'')+'</span>'+
+      '<span class="d">'+esc(r.u||r.d)+
+        (thHint(r.u||r.d)?' <span class="mk th">ไทย</span>':'')+
+        (r.extra?' <span class="plus">+'+r.extra+'</span>':'')+'</span>'+
       '<span class="ca">'+esc(r.ca)+'</span></div>';
   }).join("");
   rows.forEach(function(r){r._n=false});
@@ -352,14 +357,33 @@ function loadLogs(){
   });
 }
 
+/* ---- คำที่พบบ่อยในเว็บพนันไทย ตรวจในเครื่องทันที ไม่ต้องเรียก AI ---- */
+var TH_WORDS=["ufabet","ufa","pgslot","slotxo","superslot","betflix","ambbet",
+  "sagame","sexybaccarat","huay","ruay","jetsada","lsm99","truewallet","thaibet",
+  "thaislot","muaythai","siam","bangkok","sanook","nakhon","chiangmai","phuket",
+  "thai","baht","thb","lotto","sbobet","fun88","betflik","joker","tangbol"];
+function thHint(d){
+  var s=d.toLowerCase();
+  if(/\.th$|\.co\.th$|\.in\.th$/.test(s)) return true;
+  if(/[฀-๿]/.test(d)) return true;          // อักษรไทยจริง ๆ (จาก punycode)
+  for(var i=0;i<TH_WORDS.length;i++) if(s.indexOf(TH_WORDS[i])>=0) return true;
+  return false;
+}
+function isTh(r){ return r.m==="th" || thHint(r.d); }
+
 /* ---------------- คัดกรองด้วย AI ---------------- */
-var ai=[], aiTab="yes", aiAuto=false, aiBusy=false, aiRan=false;
+var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false;
 
 function aiDraw(){
-  var c={yes:0,maybe:0,no:0};
-  ai.forEach(function(r){ c[r.v]=(c[r.v]||0)+1 });
-  $("#navAiC").textContent = aiRan ? (c.yes+c.maybe) : "–";
-  $("#aiTabs").innerHTML=[["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
+  // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
+  var box=$("#aiRows"), keepTop=box.scrollTop, keepH=box.scrollHeight;
+  var c={yes:0,maybe:0,no:0,th:0};
+  ai.forEach(function(r){
+    c[r.v]=(c[r.v]||0)+1;
+    if(r.v!=="no" && isTh(r)) c.th++;
+  });
+  $("#navAiC").textContent = aiRan ? c.th : "–";
+  $("#aiTabs").innerHTML=[["th","ไทย"],["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
     .map(function(x){
       var n = x[0]==="all" ? ai.length : (c[x[0]]||0);
       return '<button class="tab'+(aiTab===x[0]?" on":"")+'" data-a="'+x[0]+'">'+x[1]+'<span class="c">'+n+'</span></button>';
@@ -367,18 +391,33 @@ function aiDraw(){
   $("#aiTabs").querySelectorAll(".tab").forEach(function(b){
     b.addEventListener("click",function(){aiTab=b.dataset.a;aiDraw()});
   });
-  var list=ai.filter(function(r){return aiTab==="all"||r.v===aiTab});
+  var list=ai.filter(function(r){
+    if(aiTab==="all") return true;
+    if(aiTab==="th")  return r.v!=="no" && isTh(r);
+    return r.v===aiTab;
+  });
   if(!list.length){
-    $("#aiRows").innerHTML='<div class="empty">'+
-      (ai.length ? "ไม่มีรายการในกลุ่มนี้"
-       : aiRan   ? "คัดกรองแล้ว ไม่พบโดเมนที่เข้าข่ายในรอบนี้"
-                 : "ยังไม่ได้คัดกรอง — กด “คัดกรองรายการที่ดึงมา”")+'</div>';
+    aiRows(box, keepTop, keepH, '<div class="empty">'+
+      (!ai.length ? (aiRan ? "คัดกรองแล้ว ไม่พบโดเมนที่เข้าข่ายในรอบนี้"
+                            : "ยังไม่ได้คัดกรอง — กด “คัดกรองรายการที่ดึงมา”")
+       : aiTab==="th" ? "คัดกรองไปแล้ว "+ai.length+" โดเมน <b>ยังไม่เจอของตลาดไทย</b><br>"+
+           "เว็บพนันไทยเป็นส่วนน้อยมากในสตรีมรวมทั้งโลก — ดึงต่อไปเรื่อย ๆ หรือดูแท็บอื่นก่อน"
+       : "ไม่มีรายการในกลุ่มนี้")+'</div>');
     return;
   }
-  $("#aiRows").innerHTML=list.map(function(r){
+  aiRows(box, keepTop, keepH, list.map(function(r){
+    var mk = isTh(r) ? '<span class="mk th">ไทย</span>'
+           : r.m==="cn" ? '<span class="mk">จีน</span>' : '';
     return '<div class="airow"><span class="vd '+esc(r.v)+'">'+esc(r.v)+'</span>'+
-      '<span class="d">'+esc(r.d)+'</span><span class="w">'+esc(r.w||"")+'</span></div>';
-  }).join("");
+      '<span class="d">'+esc(r.d)+mk+'</span><span class="w">'+esc(r.w||"")+'</span></div>';
+  }).join(""));
+}
+
+// เขียนรายการใหม่แล้วเลื่อนชดเชยความสูงที่งอกขึ้นด้านบน
+// ถ้าค้างอยู่บนสุดอยู่แล้วก็ปล่อยให้เห็นของใหม่ตามปกติ
+function aiRows(box, keepTop, keepH, html){
+  box.innerHTML = html;
+  if (keepTop > 8) box.scrollTop = keepTop + (box.scrollHeight - keepH);
 }
 
 function aiRun(){
@@ -403,7 +442,7 @@ function aiRun(){
         if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
         ai.unshift(r);
       });
-      ai=ai.slice(0,600);
+      ai=ai.slice(0,1000);
       $("#aiTxt").textContent="เสร็จ · token เข้า "+(res["in"]||"?")+" ออก "+(res.out||"?");
       aiDraw();
     })
