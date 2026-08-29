@@ -358,36 +358,64 @@ function loadLogs(){
 }
 
 /* ---- ตรวจรูปแบบเว็บพนันไทยในเครื่อง ไม่ต้องเรียก AI ----
-   ไม่ได้เดาเอา — ถอดมาจากโดเมนจริง 292 ชื่อบน 187.52.125.203 + 187.52.122.249
-   รูปแบบที่พบคือ <คำ><เลขมงคล>[-<คำลงท้าย>].com เช่น aha789-vip, bbc29pro, xo789-club
-   วัดผลได้ 87% ของกองจริง และติดธงโดเมนทั่วไปจาก CT ราว 3%              */
-var TH_SUF="(vvip|vip|pro|play|club|wins|win|games|game|bets|bet|auto|slots|slot|new|home|"+
-  "hub|max|one|plus|live|member|official|money|rich|lucky|luck|king|gold|asia|online|fun|"+
-  "joy|top|best|real|mex|link|lotto|zz)";
-var RE_SUF=new RegExp(TH_SUF+"$"), RE_DSUF=new RegExp("-"+TH_SUF+"$"),
-    RE_PRE=/^(play|bet|win|slot|game)-/,
-    RE_TH=/(th|thai)$/,
-    RE_LUCK=/(1688|168|888|889|789|999|989|808|855|878|868|88|89|98|99|66|77|55|44|33|22|69|36|24|29|289|333|444|555|666|777)/,
+   ปรับจากโดเมนจริง 4,910 ชื่อ ด้วย tools/ct-live/tune.py (แบ่ง 70/30)
+   วัดจากส่วนที่โมเดลไม่เคยเห็น: จับได้ 88.3% ติดธง 4.3%
+   ที่ติดธงส่วนใหญ่เป็นเว็บพนันจริงแต่คนละตลาด (1xbet, bosku33) พลาดจริงราว 1.5%
+   คะแนน = กฎโครงสร้าง + คำที่เรียนมา (โหลดจาก /api/vocab)
+   ไม่มีไฟล์ vocab เลยก็ยังใช้ได้ เหลือกฎโครงสร้างอย่างเดียว 83.2%     */
+var TH_VOCAB={}, TH_MIN=2.0;
+var RE_TLD=/\.(com|net|org|info|co|io|vip|xyz|club|online|site|live|bet|win|me|cc|top|pro|asia|biz|shop|fun|app|link|store|games?|casino|th)(\.[a-z]{2})?$/;
+var TH_SUF="(vvip|vip|pro|play|club|wins|win|games|game|bets|bet|betting|casino|auto|"+
+  "slots|slot|new|home|hub|max|one|plus|live|member|official|money|rich|lucky|luck|"+
+  "king|gold|asia|online|fun|joy|top|best|real|mex|link|lotto|login|brand|zz)";
+var RE_SUF=new RegExp(TH_SUF+"[a-z]{0,3}$"), RE_ANY=new RegExp(TH_SUF),
+    RE_DSUF=new RegExp("-"+TH_SUF), RE_PRE=/^(play|bet|win|slot|game|casino)-/,
+    RE_TH=/(^|[-\d])(th|thai)$|thai/,
+    RE_LUCK=/(1688|8888|168|888|889|789|999|989|555|456|678|365|356|369|808|855|878|868|88|89|98|99|66|77|55|44|33|22|69|36|24|29|123|289|333|444|666|777)/,
     RE_WD=/[a-z]{2,}\d{2,}/, RE_DW=/^\d{1,4}[a-z]{2,}/,
-    RE_BRAND=/(ufa|amb|g2g|pgslot|pg|slotxo|xo|betflix|betflik|joox|sagame|huay|ruay|lotto|jetsada|lsm|truewallet|wallet|sbo|joker|superslot)/,
-    RE_TLD=/\.(com|net|org|info|co|io|vip|xyz|club|online|site|live|bet|win|me|cc|top|pro|asia|biz|shop|fun|app|link|store|games?|th)(\.[a-z]{2})?$/;
+    RE_DUP=/([a-z])\1$/,          // flickk, pluss, winnerr - จดชื่อซ้ำหลายตัว
+    RE_TAIL=/[a-z]{3,}[xzkvsr]$/; // sabuyx, 3k888z, flickx
 
-function thScore(d){
-  d=String(d||"").toLowerCase().replace(/^\*\./,"");
-  if(/[\u0E00-\u0E7F]/.test(d)) return 9;            // อักษรไทยจริง (ถอดจาก punycode มาแล้ว)
-  var lab=d.replace(RE_TLD,"").split("."), core=lab[lab.length-1], flat=core.replace(/-/g,"");
-  var s=0;
-  if(RE_TH.test(flat))    s+=3;
-  if(RE_SUF.test(flat))   s+=2;
-  if(RE_DSUF.test(core))  s+=1;
-  if(RE_PRE.test(core))   s+=2;
-  if(RE_LUCK.test(flat))  s+=2;
-  if(RE_WD.test(flat))    s+=2;
-  if(RE_DW.test(flat))    s+=1;
-  if(RE_BRAND.test(flat)) s+=2;
+function thCore(d){
+  var lab=String(d||"").toLowerCase().replace(/^\*\./,"").replace(RE_TLD,"").split(".");
+  return lab[lab.length-1]||"";
+}
+function thTokens(d){
+  var c=thCore(d), t={}, m;
+  (c.match(/[a-z]{2,12}/g)||[]).forEach(function(w){t["w:"+w]=1});
+  (c.match(/\d{2,4}/g)||[]).forEach(function(n){t["n:"+n]=1});
+  var p=c.split(/[-_]/);
+  t["end:"+p[p.length-1].replace(/\d+$/,"").slice(0,12)]=1;
+  return Object.keys(t);
+}
+function thStruct(c){
+  var flat=c.replace(/[-_]/g,""), s=0;
+  if(RE_TH.test(flat))        s+=2.0;
+  if(RE_SUF.test(flat))       s+=1.5;
+  else if(RE_ANY.test(flat))  s+=1.0;
+  if(RE_DSUF.test(c))         s+=0.5;
+  if(RE_PRE.test(c))          s+=1.5;
+  if(RE_LUCK.test(flat))      s+=1.5;
+  if(RE_WD.test(flat))        s+=1.5;
+  if(RE_DW.test(flat))        s+=0.5;
+  if(RE_DUP.test(flat))       s+=0.5;
+  if(RE_TAIL.test(flat))      s+=0.5;
   return s;
 }
-function thHint(d){ return thScore(d)>=3 }
+function thScore(d){
+  d=String(d||"").toLowerCase().replace(/^\*\./,"");
+  if(/[฀-๿]/.test(d)) return 99;      // อักษรไทยตรง ๆ ถอดจาก punycode มาแล้ว
+  var s=thStruct(thCore(d));
+  thTokens(d).forEach(function(k){ s += TH_VOCAB[k]||0 });
+  return s;
+}
+function thHint(d){ return thScore(d)>=TH_MIN }
+
+fetch("/api/vocab").then(function(r){return r.json()}).then(function(v){
+  TH_VOCAB=v.vocab||{}; TH_MIN=v.min||2.0;
+  if(typeof render==="function") render();
+  if(typeof aiDraw==="function") aiDraw();
+}).catch(function(){});
 function isTh(r){ return r.m==="th" || thHint(r.u||r.d); }
 
 /* ---------------- คัดกรองด้วย AI ---------------- */

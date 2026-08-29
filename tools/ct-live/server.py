@@ -407,6 +407,18 @@ class Handler(BaseHTTPRequestHandler):
                 print("sweep error:", ex)
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(rows, ensure_ascii=False).encode())
+        elif self.path == "/api/vocab":
+            # คำที่ถอดจากโดเมนจริงด้วย tune.py - ไม่มีไฟล์ก็ใช้กฎโครงสร้างอย่างเดียว
+            # vocab.json = ตัวเต็ม มีชื่อแบรนด์ อยู่แค่ในเครื่อง
+            # vocab-generic.json = ตัวที่ commit ไว้ ใครโคลนไปก็ใช้ได้
+            body = b'{"min":2.0,"vocab":{}}'
+            for name in ("vocab.json", "vocab-generic.json"):
+                f = HERE / name
+                if f.exists():
+                    body = f.read_bytes()
+                    break
+            self._send(200, "application/json; charset=utf-8", body)
+
         elif self.path == "/api/ai-status":
             self._send(200, "application/json; charset=utf-8", json.dumps({
                 "ready": bool(ENV["key"]), "model": ENV["model"]}).encode())

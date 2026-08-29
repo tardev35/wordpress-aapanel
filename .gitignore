@@ -18,3 +18,6 @@ Thumbs.db
 # ไฟล์คอมไพล์ของ python
 __pycache__/
 *.pyc
+
+# vocab เต็มมีชื่อแบรนด์ทั้งพอร์ต - commit เฉพาะ vocab-generic.json
+tools/ct-live/vocab.json
