@@ -170,7 +170,20 @@ WordPress เป็นงานที่รอฐานข้อมูลแล�
 
 ## 3.4 MariaDB
 
-### ทางที่แนะนำ: ใช้ GUI
+### ⭐ ทางที่เร็วที่สุด: รันสคริปต์ตัวเดียวจบ
+
+```powershell
+ssh root@SERVER_IP "bash /root/wpaa/scripts/apply-mysql-config.sh --check"     # ดูก่อน
+ssh root@SERVER_IP "bash /root/wpaa/scripts/apply-mysql-config.sh --restart"   # แก้แล้ว restart
+```
+
+ตั้งครบทั้ง 12 ค่าในหน้านี้ รวมของที่ GUI ไม่มีให้แก้ · รายละเอียดและความปลอดภัยที่ใส่ไว้
+อยู่ที่ [หัวข้อย่อยด้านล่าง](#-ทางที่เร็วกว่า-ให้สคริปต์ทำให้)
+
+**ถ้าอยากเข้าใจว่าแต่ละค่าคืออะไรก่อน** อ่านสองหัวข้อถัดไปแล้วค่อยรันสคริปต์ก็ได้ —
+ผลลัพธ์เหมือนกัน
+
+### ทางที่ทำผ่าน GUI ได้
 
 **aaPanel → Databases → Settings → Performance tuning**
 
