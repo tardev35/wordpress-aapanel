@@ -16,13 +16,16 @@ ct-live — ดูสตรีมใบรับรองสดจาก Certifi
 """
 
 import base64
+import gzip
 import json
 import re
 import struct
 import sys
 import threading
 import time
+import ssl
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -189,6 +192,76 @@ def decode_entry(e):
     if u != names[0]:
         row["u"] = u            # โดเมนไทยจดเป็น xn-- ต้องถอดถึงจะอ่านออก
     return row
+
+
+# ---------------------------------------------------------------- ตรวจหน้าเว็บ
+# ดูจากชื่อโดเมนเดาได้แค่ไหนก็เดา สู้เปิดดูหน้าเว็บจริงไม่ได้
+# <html lang="th"> คือคำตอบจากตัวเว็บเอง ไม่ใช่การเดา
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+RE_LANG = re.compile(rb"<html[^>]*\slang\s*=\s*[\"']?([a-zA-Z\-]{2,10})", re.I)
+RE_TITLE = re.compile(rb"<title[^>]*>(.{0,200}?)</title>", re.I | re.S)
+RE_OGLOC = re.compile(rb"og:locale[\"'][^>]*content=[\"']([a-zA-Z_\-]{2,10})", re.I)
+RE_THAI = re.compile(r"[฀-๿]")
+
+_NOVERIFY = ssl.create_default_context()
+_NOVERIFY.check_hostname = False
+_NOVERIFY.verify_mode = ssl.CERT_NONE
+
+
+def _get(url):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "th,en;q=0.8",
+        "Accept-Encoding": "gzip",
+    })
+    with urllib.request.urlopen(req, timeout=9, context=_NOVERIFY) as r:
+        raw = r.read(200000)
+        if r.headers.get("Content-Encoding") == "gzip":
+            try:
+                raw = gzip.decompress(raw)
+            except Exception:
+                pass
+        return r.status, raw, r.geturl()
+
+
+def probe_site(dom):
+    """เปิดหน้าเว็บอ่านแค่ lang กับ title - ไม่รันสคริปต์ ไม่ตามลิงก์ต่อ"""
+    host = str(dom)[:120].lstrip("*.")
+    out = {"d": dom, "lang": "", "th": False, "title": "", "err": ""}
+    for scheme in ("https://", "http://"):
+        try:
+            st, raw, final = _get(scheme + host)
+        except Exception as ex:
+            out["err"] = type(ex).__name__
+            continue
+        m = RE_LANG.search(raw) or RE_OGLOC.search(raw)
+        if m:
+            out["lang"] = m.group(1).decode("ascii", "ignore").lower().replace("_", "-")
+        mt = RE_TITLE.search(raw)
+        if mt:
+            try:
+                out["title"] = re.sub(r"\s+", " ", mt.group(1).decode(
+                    "utf-8", "ignore")).strip()[:90]
+            except Exception:
+                pass
+        body = raw.decode("utf-8", "ignore")
+        # นับตัวอักษรไทยในหน้า - เยอะพอถึงนับว่าเป็นเนื้อหาไทย ไม่ใช่แค่คำเดียวหลุดมา
+        out["thai_chars"] = len(RE_THAI.findall(body))
+        out["th"] = out["lang"].startswith("th") or out["thai_chars"] >= 40
+        out["status"] = st
+        out["err"] = ""
+        if final.split("/")[2].lstrip("www.") != host.lstrip("www."):
+            out["to"] = final.split("/")[2]      # เด้งไปโดเมนอื่น
+        return out
+    return out
+
+
+def probe_many(doms, workers=6):
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(probe_site, doms))
+
 
 
 # ---------------------------------------------------------------- logs
@@ -426,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"not found")
 
     def do_POST(self):
-        if self.path != "/api/classify":
+        if self.path not in ("/api/classify", "/api/probe"):
             self._send(404, "text/plain; charset=utf-8", b"not found")
             return
         n = int(self.headers.get("Content-Length", 0))
@@ -435,6 +508,11 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self._send(400, "application/json; charset=utf-8",
                        json.dumps({"error": "payload ไม่ถูกต้อง"}, ensure_ascii=False).encode())
+            return
+        if self.path == "/api/probe":
+            rows = probe_many([str(d)[:120] for d in doms if d][:24])
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps({"rows": rows}, ensure_ascii=False).encode())
             return
         res = classify([str(d)[:120] for d in doms if d])
         self._send(200, "application/json; charset=utf-8",

@@ -105,6 +105,7 @@ a.ct:hover{color:var(--alert)}
 .mk{display:inline-block;font-size:10px;padding:0 6px;border-radius:20px;margin-left:6px;
   background:var(--panel-2);color:var(--faint);vertical-align:1px;font-family:system-ui,sans-serif}
 .mk.th{background:var(--alert-soft);color:var(--alert);font-weight:500}
+.mk.pv{background:var(--amber-soft);color:var(--amber);font-family:"IBM Plex Mono",monospace}
 .empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
 
 /* ---- หน้าอื่น ---- */
@@ -181,6 +182,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         <label style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--dim);cursor:pointer">
           <input type="checkbox" id="aiAuto"> คัดกรองอัตโนมัติทุกรอบที่ดึง
         </label>
+        <button id="btnProbe">เปิดดูหน้าเว็บจริง</button>
         <button id="btnAiClear">ล้างผล</button>
         <span class="live off" id="aiDot"><i></i><span id="aiTxt">ยังไม่ได้เรียก</span></span>
       </div>
@@ -192,7 +194,13 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <p class="sub" style="margin-top:14px;font-size:13px">
         โมเดลดูจาก<b>ชื่อโดเมนอย่างเดียว</b> จึงผิดได้ทั้งสองทาง —
         เว็บทั่วไปที่มีตัวเลขอาจถูกทำเครื่องหมาย และเว็บพนันที่ตั้งชื่อธรรมดาจะรอด
-        <b>ใช้เป็นตัวช่วยจัดลำดับว่าควรดูตัวไหนก่อน ไม่ใช่คำตัดสิน</b>
+        <b>ใช้เป็นตัวช่วยจัดลำดับว่าควรดูตัวไหนก่อน ไม่ใช่คำตัดสิน</b><br><br>
+        กด <b>เปิดดูหน้าเว็บจริง</b> เพื่อยืนยัน — มันอ่าน <span class="mono">&lt;html lang="th"&gt;</span>
+        กับจำนวนอักษรไทยในหน้า ซึ่งมาจากตัวเว็บเอง ไม่ใช่การเดาจากชื่อ
+        <b>แม่นกว่าทั้งการนับคำและ AI มาก</b><br>
+        ข้อควรระวัง 2 อย่าง — เว็บหลายภาษาจะเปลี่ยน <span class="mono">lang</span>
+        ตามผู้เข้าชม (google.com ขึ้น <span class="mono">th-sg</span> ทั้งที่ไม่ใช่เว็บไทย)
+        และการเปิดเว็บทำจาก<b>เครื่องนี้</b> เว็บปลายทางจะเห็น IP ของคุณ
       </p>
     </div>
 
@@ -433,7 +441,11 @@ fetch("/api/vocab").then(function(r){return r.json()}).then(function(v){
 // ตัวตรวจในเครื่องวัดมาด้วยโจทย์ "พนันไทย vs โดเมนทั่วไป" ไม่ใช่ "ไทย vs พนันชาติอื่น"
 // พอทุกตัวเป็นพนันหมดแล้วมันแยกไม่ออก เพราะใช้คำชุดเดียวกันทั้งเอเชีย
 // จึงใช้ได้แค่ตอนที่ยังไม่มีคำตอบจากโมเดล เช่นหน้าสตรีม
-function isTh(r){ return r.m ? r.m==="th" : thHint(r.u||r.d); }
+function isTh(r){
+  if(r.p && r.p.ok) return r.p.th;      // เปิดหน้าเว็บดูแล้ว เชื่อได้ที่สุด
+  if(r.m) return r.m==="th";            // โมเดลเห็นบริบททั้งชื่อ
+  return thHint(r.u||r.d);              // เดาจากชื่ออย่างเดียว อ่อนสุด
+}
 
 /* ---------------- คัดกรองด้วย AI ---------------- */
 var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false;
@@ -473,6 +485,10 @@ function aiDraw(){
     var mk = isTh(r) ? '<span class="mk th">ไทย</span>'
            : r.m==="cn" ? '<span class="mk">จีน</span>'
            : r.m==="other" ? '<span class="mk">อื่น</span>' : '';
+    if(r.p) mk += r.p.ok
+      ? '<span class="mk pv" title="'+esc(r.p.title||"")+'">'+esc(r.p.lang||"ไม่ระบุ lang")+
+        (r.p.chars?' · ไทย '+r.p.chars+' ตัว':'')+'</span>'
+      : '<span class="mk">เปิดไม่ได้</span>';
     return '<div class="airow"><span class="vd '+esc(r.v)+'">'+esc(r.v)+'</span>'+
       '<span class="d">'+dlink(r.d)+mk+'</span><span class="w">'+esc(r.w||"")+'</span></div>';
   }).join(""));
@@ -516,6 +532,31 @@ function aiRun(){
 }
 $("#btnAi").addEventListener("click",aiRun);
 $("#btnAiClear").addEventListener("click",function(){ai=[];aiDraw()});
+
+// เดาจากชื่อได้แค่ไหนก็เดา สู้เปิดหน้าเว็บอ่าน <html lang="..."> ไม่ได้
+// เปิดจากเครื่องเรา เว็บปลายทางจะเห็น IP เรา - ทำทีละ 24 ตัว ไม่ยิงรัว
+$("#btnProbe").addEventListener("click",function(){
+  var list=ai.filter(function(r){return aiTab==="all"||(aiTab==="th"?r.v!=="no"&&isTh(r):r.v===aiTab)})
+             .filter(function(r){return !r.p}).slice(0,24);
+  if(!list.length){ $("#aiTxt").textContent="ไม่มีตัวที่ยังไม่ได้เปิดดู"; return; }
+  $("#aiDot").className="live"; $("#aiTxt").textContent="กำลังเปิด "+list.length+" เว็บ...";
+  fetch("/api/probe",{method:"POST",headers:{"Content-Type":"application/json"},
+                      body:JSON.stringify(list.map(function(r){return r.d}))})
+    .then(function(r){return r.json()}).then(function(res){
+      $("#aiDot").className="live off";
+      var by={}; (res.rows||[]).forEach(function(x){by[x.d]=x});
+      var th=0;
+      ai.forEach(function(r){
+        var x=by[r.d]; if(!x) return;
+        r.p={ok:!x.err, th:!!x.th, lang:x.lang||"", chars:x.thai_chars||0, title:x.title||""};
+        if(r.p.ok&&r.p.th) th++;
+      });
+      $("#aiTxt").textContent="เปิดได้ "+(res.rows||[]).filter(function(x){return !x.err}).length+
+        " จาก "+list.length+" · เป็นไทยจริง "+th;
+      aiDraw();
+    })
+    .catch(function(){ $("#aiDot").className="live off"; $("#aiTxt").textContent="เปิดหน้าเว็บไม่สำเร็จ"; });
+});
 $("#aiAuto").addEventListener("change",function(){aiAuto=this.checked});
 
 fetch("/api/ai-status").then(function(r){return r.json()}).then(function(s){
