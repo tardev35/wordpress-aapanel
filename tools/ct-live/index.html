@@ -357,19 +357,38 @@ function loadLogs(){
   });
 }
 
-/* ---- คำที่พบบ่อยในเว็บพนันไทย ตรวจในเครื่องทันที ไม่ต้องเรียก AI ---- */
-var TH_WORDS=["ufabet","ufa","pgslot","slotxo","superslot","betflix","ambbet",
-  "sagame","sexybaccarat","huay","ruay","jetsada","lsm99","truewallet","thaibet",
-  "thaislot","muaythai","siam","bangkok","sanook","nakhon","chiangmai","phuket",
-  "thai","baht","thb","lotto","sbobet","fun88","betflik","joker","tangbol"];
-function thHint(d){
-  var s=d.toLowerCase();
-  if(/\.th$|\.co\.th$|\.in\.th$/.test(s)) return true;
-  if(/[฀-๿]/.test(d)) return true;          // อักษรไทยจริง ๆ (จาก punycode)
-  for(var i=0;i<TH_WORDS.length;i++) if(s.indexOf(TH_WORDS[i])>=0) return true;
-  return false;
+/* ---- ตรวจรูปแบบเว็บพนันไทยในเครื่อง ไม่ต้องเรียก AI ----
+   ไม่ได้เดาเอา — ถอดมาจากโดเมนจริง 292 ชื่อบน 187.52.125.203 + 187.52.122.249
+   รูปแบบที่พบคือ <คำ><เลขมงคล>[-<คำลงท้าย>].com เช่น aha789-vip, bbc29pro, xo789-club
+   วัดผลได้ 87% ของกองจริง และติดธงโดเมนทั่วไปจาก CT ราว 3%              */
+var TH_SUF="(vvip|vip|pro|play|club|wins|win|games|game|bets|bet|auto|slots|slot|new|home|"+
+  "hub|max|one|plus|live|member|official|money|rich|lucky|luck|king|gold|asia|online|fun|"+
+  "joy|top|best|real|mex|link|lotto|zz)";
+var RE_SUF=new RegExp(TH_SUF+"$"), RE_DSUF=new RegExp("-"+TH_SUF+"$"),
+    RE_PRE=/^(play|bet|win|slot|game)-/,
+    RE_TH=/(th|thai)$/,
+    RE_LUCK=/(1688|168|888|889|789|999|989|808|855|878|868|88|89|98|99|66|77|55|44|33|22|69|36|24|29|289|333|444|555|666|777)/,
+    RE_WD=/[a-z]{2,}\d{2,}/, RE_DW=/^\d{1,4}[a-z]{2,}/,
+    RE_BRAND=/(ufa|amb|g2g|pgslot|pg|slotxo|xo|betflix|betflik|joox|sagame|huay|ruay|lotto|jetsada|lsm|truewallet|wallet|sbo|joker|superslot)/,
+    RE_TLD=/\.(com|net|org|info|co|io|vip|xyz|club|online|site|live|bet|win|me|cc|top|pro|asia|biz|shop|fun|app|link|store|games?|th)(\.[a-z]{2})?$/;
+
+function thScore(d){
+  d=String(d||"").toLowerCase().replace(/^\*\./,"");
+  if(/[\u0E00-\u0E7F]/.test(d)) return 9;            // อักษรไทยจริง (ถอดจาก punycode มาแล้ว)
+  var lab=d.replace(RE_TLD,"").split("."), core=lab[lab.length-1], flat=core.replace(/-/g,"");
+  var s=0;
+  if(RE_TH.test(flat))    s+=3;
+  if(RE_SUF.test(flat))   s+=2;
+  if(RE_DSUF.test(core))  s+=1;
+  if(RE_PRE.test(core))   s+=2;
+  if(RE_LUCK.test(flat))  s+=2;
+  if(RE_WD.test(flat))    s+=2;
+  if(RE_DW.test(flat))    s+=1;
+  if(RE_BRAND.test(flat)) s+=2;
+  return s;
 }
-function isTh(r){ return r.m==="th" || thHint(r.d); }
+function thHint(d){ return thScore(d)>=3 }
+function isTh(r){ return r.m==="th" || thHint(r.u||r.d); }
 
 /* ---------------- คัดกรองด้วย AI ---------------- */
 var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false;

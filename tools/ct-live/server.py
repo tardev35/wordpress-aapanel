@@ -306,12 +306,21 @@ PROMPT = """คุณคือตัวคัดกรองชื่อโด�
 ถ้าไม่แน่ใจให้ตอบ no
 
 ต้องบอก "ตลาด" ที่เว็บนั้นเล็งไว้ด้วย (m):
-- th = ตลาดไทย สัญญาณ: ufa, ufabet, pgslot, slotxo, superslot, betflix, ambbet,
-  sagame, huay, ruay, jetsada, lsm99, truewallet/wallet, thai, siam, bangkok,
-  baht/thb, muay, นามสกุล .th หรือชื่อเป็นภาษาไทย/คำไทยสะกดด้วยอังกฤษ
+- th = ตลาดไทย รูปแบบเด่นคือ <คำ><เลขมงคล>-<คำลงท้าย>.com
+  ตัวอย่างจริง: aha789-vip, bbc29-play, xo789-club, betdee168-club, maha289-play,
+  duangpang168-game, win3333-vvip, luck44-home, betrich88-th, bplay444-new
+  คำลงท้ายที่พบบ่อย: vip vvip pro play club win game bet auto slot new home th thai
+  เลขที่พบบ่อย: 168 88 888 789 1688 99 89 98 55 44 289 333 444
+  คำไทยสะกดอังกฤษ: duangpang, hongtae, meephooh, bunmak, laobunrod, ruay, huay
+  แบรนด์: ufa/ufabet, amb/ambbet, g2g, pg/pgslot, xo/slotxo, betflix, joox, sagame
+  หรือชื่อเป็นอักษรไทยตรง ๆ เช่น เว็บฟิน20.com
 - cn = ตลาดจีน สัญญาณ: ชื่อเป็นตัวเลขล้วน (858002.com), นำหน้าด้วย m./ww/wap,
   ag, bc, hg, 6688, 365, พินอิน, .cc .top ที่ตามด้วยอักษรมั่ว
 - other = อื่น ๆ หรือดูไม่ออก
+
+เลขมงคล 88/168/888 ใช้กันทั่วเอเชีย ไม่ได้แปลว่าไทยเสมอ
+ถ้าชื่อระบุที่อื่นชัดเจน (taipei, tokyo, manila, hanoi, jakarta, saigon)
+หรือเป็นพินอิน ให้ตอบ cn หรือ other ไม่ใช่ th
 
 ตอบเป็น JSON array เท่านั้น ไม่ต้องมีข้อความอื่น:
 [{"d":"ชื่อโดเมน","v":"yes|maybe|no","m":"th|cn|other","w":"เหตุผลสั้นไม่เกิน 8 คำ"}]
