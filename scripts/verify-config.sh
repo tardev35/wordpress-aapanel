@@ -88,6 +88,19 @@ for f in "$VHOST"/*.conf; do
 done
 if [ -z "$MISSING" ]; then echo "OK"; else echo "ขาด ->$MISSING (รัน stamp-site.sh)"; FAIL=1; fi
 
+printf "%-34s : " "กฎกันแฮ็ก (01-hardening)"
+HMISS=""
+for f in "$VHOST"/*.conf; do
+  b=$(basename "$f" .conf)
+  case "$b" in 0.*|phpmyadmin|phpfpm_status|speed|waf2monitor_data) continue ;; esac
+  [ -d "/www/wwwroot/$b" ] || continue
+  [ -e "$VHOST/extension/$b/01-hardening.conf" ] || HMISS="$HMISS $b"
+done
+if [ ! -f /www/server/nginx/conf/wp-hardening.conf ]; then
+  echo "ยังไม่ได้ติดตั้ง -> รัน harden-wp.sh"; FAIL=1
+elif [ -z "$HMISS" ]; then echo "OK"
+else echo "ขาด ->$HMISS (รัน harden-wp.sh)"; FAIL=1; fi
+
 printf "%-34s : " "WP auto-update ปิดหมด"
 WPMISS=""
 for c in /www/wwwroot/*/wp-config.php; do

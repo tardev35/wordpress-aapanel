@@ -26,6 +26,14 @@ dir="/www/server/panel/vhost/nginx/extension/$d"
 mkdir -p "$dir"
 ln -sf "$COMMON" "$dir/00-common.conf"
 
+# กฎกันเว็บโดนแฮ็ก - ห้ามรัน PHP ใน uploads, ห้ามเรียก wp-includes ตรง ๆ,
+# บล็อกโฟลเดอร์ซ่อน, จำกัดอัตรายิง wp-login (ดู configs/wp-hardening.conf)
+#
+# ไซต์ใหม่ต้องได้ตั้งแต่วินาทีแรก - bbc29pro.com ถูกเจาะภายใน 2 วันหลังสร้าง
+# (สร้าง 23 ส.ค. 14:36 -> บัญชี admin ปลอมตัวแรก 25 ส.ค. 01:12)
+HARDEN=/www/server/nginx/conf/wp-hardening.conf
+[ -f "$HARDEN" ] && ln -sf "$HARDEN" "$dir/01-hardening.conf"
+
 # ปิด auto-update ให้ไซต์ใหม่ตั้งแต่ตอนนี้ ไม่ต้องรอ cron รอบ 5 ทุ่ม
 #
 # ทำไมรอไม่ได้: ไซต์ที่สร้างตอนเช้าจะมี auto-update เปิดอยู่ทั้งวันจนกว่า cron จะมาถึง

@@ -30,6 +30,7 @@
 | [docs/08-decisions.md](docs/08-decisions.md) | บันทึกการตัดสินใจ |
 | [docs/09-static-sites.md](docs/09-static-sites.md) | โฮสต์เว็บ static (Astro) บนเครื่องเดียวกัน |
 | [docs/10-bare-linux.md](docs/10-bare-linux.md) | **Ubuntu เปล่า ๆ → aaPanel** สำหรับเครื่องที่ไม่มี template ให้ + ค่าจูนเมื่อเครื่องใหญ่กว่า 4 vCPU / 16 GB |
+| [docs/11-security.md](docs/11-security.md) | 🔴 **เว็บโดนแฮ็ก** — บอทหาเว็บใหม่เจอได้ยังไง เคสจริง วิธีตรวจ และเกราะที่ติดตั้งแล้ว |
 
 ---
 
@@ -205,6 +206,8 @@ cmd /c "ssh root@SERVER_IP ""bash -s"" < scripts\ชื่อสคริปต�
 | [`fix-permissions.sh`](scripts/fix-permissions.sh) | แก้ `wp-config.php` เป็น 640 ทุกเว็บ | **ต้อง `scp`** (มีคำถาม yes/no) |
 | [`fix-cache-purge.sh`](scripts/fix-cache-purge.sh) | ทำให้ปุ่ม Purge ในหน้า WP ล้างแคชได้จริง (`--check` ดูอย่างเดียว) | scp หรือ cmd /c |
 | [`apply-mysql-config.sh`](scripts/apply-mysql-config.sh) | ตั้งค่า MariaDB ตาม [03 §3.4](docs/03-tuning.md) · `--check` ดูก่อน · `--restart` ถึงจะมีผล | scp หรือ cmd /c |
+| [`harden-wp.sh`](scripts/harden-wp.sh) | กฎ nginx กันเว็บโดนแฮ็ก ทุกไซต์ (`--check` / `--remove`) | **ต้อง `scp`** |
+| [`check-exposure.sh`](scripts/check-exposure.sh) | ดูว่าเว็บเปิดเผยอะไรให้บอท · ใช้กับเว็บที่ไหนก็ได้ | scp หรือ cmd /c |
 | [`install-autoheal.sh`](scripts/install-autoheal.sh) | ตั้ง cron ให้ตรวจ+ซ่อมเองทุกคืน · **ครั้งเดียวต่อเครื่อง** | **ต้อง `scp`** |
 | [`install-site-watcher.sh`](scripts/install-site-watcher.sh) | ตั้ง path+timer ให้ stamp ไซต์ใหม่เอง ไม่ต้องมีคนสั่ง · **ครั้งเดียวต่อเครื่อง** (`--remove` ถอด) | **ต้อง `scp`** |
 | [`set-wp-autoupdate.sh`](scripts/set-wp-autoupdate.sh) | ปิด auto-update ของ WordPress ทุกไซต์ (`--revert` ถอดกลับ) | scp หรือ cmd /c |
