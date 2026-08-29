@@ -178,9 +178,10 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <div class="warn" id="aiWarn" hidden></div>
 
       <div class="bar">
-        <button class="go" id="btnAi">คัดกรองรายการที่ดึงมา</button>
+        <button class="go" id="btnAi">หาเว็บพนันไทย</button>
+        <button id="btnAiName">คัดจากชื่ออย่างเดียว</button>
         <label style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--dim);cursor:pointer">
-          <input type="checkbox" id="aiAuto"> คัดกรองอัตโนมัติทุกรอบที่ดึง
+          <input type="checkbox" id="aiAuto"> ทำอัตโนมัติทุกรอบที่ดึง
         </label>
         <button id="btnProbe">เปิดดูหน้าเว็บจริง</button>
         <button id="btnAiClear">ล้างผล</button>
@@ -195,11 +196,16 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         โมเดลดูจาก<b>ชื่อโดเมนอย่างเดียว</b> จึงผิดได้ทั้งสองทาง —
         เว็บทั่วไปที่มีตัวเลขอาจถูกทำเครื่องหมาย และเว็บพนันที่ตั้งชื่อธรรมดาจะรอด
         <b>ใช้เป็นตัวช่วยจัดลำดับว่าควรดูตัวไหนก่อน ไม่ใช่คำตัดสิน</b><br><br>
-        กด <b>เปิดดูหน้าเว็บจริง</b> เพื่อยืนยัน — มันอ่าน <span class="mono">&lt;html lang="th"&gt;</span>
-        กับจำนวนอักษรไทยในหน้า ซึ่งมาจากตัวเว็บเอง ไม่ใช่การเดาจากชื่อ
-        <b>แม่นกว่าทั้งการนับคำและ AI มาก</b><br>
-        ข้อควรระวัง 2 อย่าง — เว็บหลายภาษาจะเปลี่ยน <span class="mono">lang</span>
-        ตามผู้เข้าชม (google.com ขึ้น <span class="mono">th-sg</span> ทั้งที่ไม่ใช่เว็บไทย)
+        ปุ่ม <b>หาเว็บพนันไทย</b> ทำ 3 ขั้น เรียงจากถูกไปแพง ตัดทิ้งให้มากที่สุดก่อนถึงขั้นที่แพง:<br>
+        <b>1.</b> กรองด้วยชื่อ — ฟรี ทันที &nbsp;
+        <b>2.</b> เปิดหน้าเว็บอ่าน <span class="mono">&lt;html lang&gt;</span> — 0.22 วินาที/โดเมน เปิดพร้อมกัน 32 ตัว &nbsp;
+        <b>3.</b> ถาม AI ว่าพนันไหม — เฉพาะตัวที่ยืนยันว่าเป็นไทยแล้ว จึงไม่จ่าย token ให้เว็บที่ไม่เกี่ยว<br><br>
+        <b>ทำไมต้องใช้ทั้ง lang และ AI</b> — <span class="mono">lang="th"</span> ตอบว่า
+        “หน้านี้เป็นภาษาไทย” ไม่ได้ตอบว่า “เป็นเว็บพนัน” ทดสอบจริงแล้วมันจับ
+        Roundcube webmail, cPanel และ Nextcloud ที่ตั้งภาษาไทยไว้ติดมาด้วย
+        ต้องใช้คู่กันถึงจะได้ <b>ไทย + พนัน</b><br>
+        ข้อควรระวังอีก 2 อย่าง — เว็บหลายภาษาเปลี่ยน <span class="mono">lang</span>
+        ตามผู้เข้าชม (google.com ขึ้น <span class="mono">th-sg</span>) จึงดูจำนวนอักษรไทยประกอบ
         และการเปิดเว็บทำจาก<b>เครื่องนี้</b> เว็บปลายทางจะเห็น IP ของคุณ
       </p>
     </div>
@@ -276,7 +282,7 @@ document.querySelectorAll("#nav a").forEach(function(a){
     if(a.id==="navMine"){ setMine(!mineOnly); return; }
     setPage(a.dataset.page); a.classList.add("on");
     if(a.dataset.page==="logs") loadLogs();
-    if(a.dataset.page==="ai" && !aiRan && !aiBusy && rows.length) aiRun();
+    if(a.dataset.page==="ai" && !aiRan && !aiBusy && rows.length) pipeline();
   });
 });
 
@@ -346,7 +352,7 @@ function fetchOnce(){
     });
     rows=nw.concat(rows).slice(0,900);
     drawTabs(); render();
-    if(aiAuto && nw.length) aiRun();
+    if(aiAuto && nw.length) pipeline();
   }).catch(function(){});
 }
 
@@ -448,7 +454,7 @@ function isTh(r){
 }
 
 /* ---------------- คัดกรองด้วย AI ---------------- */
-var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false;
+var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false, probed={};
 
 function aiDraw(){
   // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
@@ -501,6 +507,59 @@ function aiRows(box, keepTop, keepH, html){
   if (keepTop > 8) box.scrollTop = keepTop + (box.scrollHeight - keepH);
 }
 
+// ลำดับนี้ตั้งใจ - ขั้นที่ถูกกว่าอยู่หน้า ตัดตัวที่ไม่เกี่ยวออกก่อนถึงขั้นที่แพงกว่า
+//   1. กรองด้วยชื่อ   ฟรี ทันที        ตัดโดเมนทั่วไปออก
+//   2. เปิดหน้าเว็บ    0.22 วิ/โดเมน   ยืนยันว่าเป็นภาษาไทยจริง จาก <html lang>
+//   3. ถาม AI         เสีย token      ตัดสินว่าเป็นพนันไหม เฉพาะตัวที่เป็นไทยแล้ว
+// สลับ 2 กับ 3 ก็ได้ผลเหมือนกัน แต่จะจ่าย token ให้เว็บที่ไม่ใช่ไทยเปล่า ๆ
+function pipeline(){
+  var cand=[], seen={};
+  ai.forEach(function(r){seen[r.d]=1});
+  rows.forEach(function(r){
+    if(seen[r.d]) return;
+    if(!thHint(r.u||r.d)) return;             // ขั้น 1 - ชื่อไม่เข้าเค้าก็ไม่ต้องเปิด
+    seen[r.d]=1; cand.push(r.d);
+  });
+  if(!cand.length){ $("#aiTxt").textContent="ไม่มีโดเมนใหม่ที่เข้าเค้า"; return; }
+  cand=cand.slice(0,150);
+  $("#aiDot").className="live";
+  $("#aiTxt").textContent="ขั้น 2/3 เปิด "+cand.length+" เว็บดูภาษา...";
+  fetch("/api/probe",{method:"POST",headers:{"Content-Type":"application/json"},
+                      body:JSON.stringify(cand)})
+    .then(function(r){return r.json()}).then(function(res){
+      var pr={}, thai=[];
+      (res.rows||[]).forEach(function(x){ pr[x.d]=x; if(!x.err&&x.th) thai.push(x.d) });
+      probed=Object.assign(probed,pr);
+      if(!thai.length){
+        $("#aiDot").className="live off";
+        $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไม่เจอหน้าภาษาไทยเลย";
+        return;
+      }
+      $("#aiTxt").textContent="ขั้น 3/3 เจอหน้าไทย "+thai.length+" ให้ AI ตัดสินว่าพนันไหม...";
+      return fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
+                                    body:JSON.stringify(thai.slice(0,60))})
+        .then(function(r){return r.json()}).then(function(c){
+          $("#aiDot").className="live off";
+          if(c.error){ $("#aiWarn").hidden=false;
+                       $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(c.error); return; }
+          aiRan=true; $("#aiWarn").hidden=true;
+          (c.rows||[]).forEach(function(r){
+            if(!r||!r.d) return;
+            r.v=(r.v||"no").toLowerCase();
+            if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
+            var x=probed[r.d];
+            if(x) r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||""};
+            ai.unshift(r);
+          });
+          ai=ai.slice(0,1000);
+          $("#aiTxt").textContent="เสร็จ · เปิด "+cand.length+" เว็บ เป็นไทย "+thai.length+
+            " · token เข้า "+(c["in"]||"?");
+          aiDraw();
+        });
+    })
+    .catch(function(){ $("#aiDot").className="live off"; $("#aiTxt").textContent="ทำไม่สำเร็จ"; });
+}
+
 function aiRun(){
   if(aiBusy) return;
   var doms=[], seen={};
@@ -530,7 +589,8 @@ function aiRun(){
     .catch(function(){ aiBusy=false; $("#aiDot").className="live off";
                        $("#aiTxt").textContent="เรียก server ไม่ได้"; });
 }
-$("#btnAi").addEventListener("click",aiRun);
+$("#btnAi").addEventListener("click",pipeline);
+$("#btnAiName").addEventListener("click",aiRun);
 $("#btnAiClear").addEventListener("click",function(){ai=[];aiDraw()});
 
 // เดาจากชื่อได้แค่ไหนก็เดา สู้เปิดหน้าเว็บอ่าน <html lang="..."> ไม่ได้

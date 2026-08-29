@@ -216,8 +216,8 @@ def _get(url):
         "Accept-Language": "th,en;q=0.8",
         "Accept-Encoding": "gzip",
     })
-    with urllib.request.urlopen(req, timeout=9, context=_NOVERIFY) as r:
-        raw = r.read(200000)
+    with urllib.request.urlopen(req, timeout=5, context=_NOVERIFY) as r:
+        raw = r.read(65536)
         if r.headers.get("Content-Encoding") == "gzip":
             try:
                 raw = gzip.decompress(raw)
@@ -226,15 +226,26 @@ def _get(url):
         return r.status, raw, r.geturl()
 
 
+_probe_cache = {}
+_probe_lock = threading.Lock()
+
+
 def probe_site(dom):
     """เปิดหน้าเว็บอ่านแค่ lang กับ title - ไม่รันสคริปต์ ไม่ตามลิงก์ต่อ"""
     host = str(dom)[:120].lstrip("*.")
+    with _probe_lock:
+        hit = _probe_cache.get(host)
+    if hit is not None:
+        return dict(hit, d=dom)
     out = {"d": dom, "lang": "", "th": False, "title": "", "err": ""}
     for scheme in ("https://", "http://"):
         try:
             st, raw, final = _get(scheme + host)
         except Exception as ex:
             out["err"] = type(ex).__name__
+            # https หมดเวลา แปลว่าเครื่องปลายทางไม่ตอบ ลอง http ต่อก็รออีก 5 วิเปล่า ๆ
+            if "timed out" in str(ex).lower() or isinstance(ex, TimeoutError):
+                break
             continue
         m = RE_LANG.search(raw) or RE_OGLOC.search(raw)
         if m:
@@ -254,11 +265,17 @@ def probe_site(dom):
         out["err"] = ""
         if final.split("/")[2].lstrip("www.") != host.lstrip("www."):
             out["to"] = final.split("/")[2]      # เด้งไปโดเมนอื่น
+        with _probe_lock:
+            _probe_cache[host] = out
         return out
+    # เปิดไม่ได้ก็จำไว้ ไม่งั้นรอ timeout ซ้ำทุกรอบ
+    with _probe_lock:
+        if len(_probe_cache) < 20000:
+            _probe_cache[host] = out
     return out
 
 
-def probe_many(doms, workers=6):
+def probe_many(doms, workers=32):
     with ThreadPoolExecutor(max_workers=workers) as ex:
         return list(ex.map(probe_site, doms))
 
@@ -504,17 +521,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         n = int(self.headers.get("Content-Length", 0))
         try:
-            doms = json.loads(self.rfile.read(n).decode("utf-8"))[:60]
+            doms = json.loads(self.rfile.read(n).decode("utf-8"))[:150]
         except Exception:
             self._send(400, "application/json; charset=utf-8",
                        json.dumps({"error": "payload ไม่ถูกต้อง"}, ensure_ascii=False).encode())
             return
         if self.path == "/api/probe":
-            rows = probe_many([str(d)[:120] for d in doms if d][:24])
+            rows = probe_many([str(d)[:120] for d in doms if d][:150])
             self._send(200, "application/json; charset=utf-8",
                        json.dumps({"rows": rows}, ensure_ascii=False).encode())
             return
-        res = classify([str(d)[:120] for d in doms if d])
+        res = classify([str(d)[:120] for d in doms if d][:60])
         self._send(200, "application/json; charset=utf-8",
                    json.dumps(res, ensure_ascii=False).encode())
 
