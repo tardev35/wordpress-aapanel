@@ -128,7 +128,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <a data-page="about">ท่อนี้คืออะไร</a>
       <div class="navhead">กรอง</div>
       <a data-page="stream" id="navMine">เฉพาะโดเมนของเรา<span class="k" id="navMineC">ปิด</span></a>
-      <a data-page="ai" id="navAi">คัดกรองเว็บพนัน<span class="k" id="navAiC">0</span></a>
+      <a data-page="ai" id="navAi">คัดกรองเว็บพนัน<span class="k" id="navAiC">–</span></a>
     </nav>
   </aside>
 
@@ -252,6 +252,7 @@ document.querySelectorAll("#nav a").forEach(function(a){
     if(a.id==="navMine"){ setMine(!mineOnly); return; }
     setPage(a.dataset.page); a.classList.add("on");
     if(a.dataset.page==="logs") loadLogs();
+    if(a.dataset.page==="ai" && !aiRan && !aiBusy && rows.length) aiRun();
   });
 });
 
@@ -352,12 +353,12 @@ function loadLogs(){
 }
 
 /* ---------------- คัดกรองด้วย AI ---------------- */
-var ai=[], aiTab="yes", aiAuto=false, aiBusy=false;
+var ai=[], aiTab="yes", aiAuto=false, aiBusy=false, aiRan=false;
 
 function aiDraw(){
   var c={yes:0,maybe:0,no:0};
   ai.forEach(function(r){ c[r.v]=(c[r.v]||0)+1 });
-  $("#navAiC").textContent=c.yes+c.maybe;
+  $("#navAiC").textContent = aiRan ? (c.yes+c.maybe) : "–";
   $("#aiTabs").innerHTML=[["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
     .map(function(x){
       var n = x[0]==="all" ? ai.length : (c[x[0]]||0);
@@ -368,7 +369,10 @@ function aiDraw(){
   });
   var list=ai.filter(function(r){return aiTab==="all"||r.v===aiTab});
   if(!list.length){
-    $("#aiRows").innerHTML='<div class="empty">'+(ai.length?"ไม่มีรายการในกลุ่มนี้":"ยังไม่มีผล — กด “คัดกรองรายการที่ดึงมา”")+'</div>';
+    $("#aiRows").innerHTML='<div class="empty">'+
+      (ai.length ? "ไม่มีรายการในกลุ่มนี้"
+       : aiRan   ? "คัดกรองแล้ว ไม่พบโดเมนที่เข้าข่ายในรอบนี้"
+                 : "ยังไม่ได้คัดกรอง — กด “คัดกรองรายการที่ดึงมา”")+'</div>';
     return;
   }
   $("#aiRows").innerHTML=list.map(function(r){
@@ -382,7 +386,7 @@ function aiRun(){
   var doms=[], seen={};
   ai.forEach(function(r){seen[r.d]=1});
   rows.forEach(function(r){ if(!seen[r.d] && doms.length<60) { seen[r.d]=1; doms.push(r.d); } });
-  if(!doms.length){ $("#aiTxt").textContent="ไม่มีโดเมนใหม่ให้คัดกรอง"; return; }
+  if(!doms.length){ aiRan=true; $("#aiTxt").textContent="ไม่มีโดเมนใหม่ให้คัดกรอง"; aiDraw(); return; }
   aiBusy=true;
   $("#aiDot").className="live"; $("#aiTxt").textContent="กำลังคัดกรอง "+doms.length+" โดเมน...";
   fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -392,7 +396,7 @@ function aiRun(){
       aiBusy=false; $("#aiDot").className="live off";
       if(res.error){ $("#aiTxt").textContent="ผิดพลาด"; $("#aiWarn").hidden=false;
                      $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(res.error); return; }
-      $("#aiWarn").hidden=true;
+      $("#aiWarn").hidden=true; aiRan=true;
       (res.rows||[]).forEach(function(r){
         if(!r||!r.d) return;
         r.v=(r.v||"no").toLowerCase();
