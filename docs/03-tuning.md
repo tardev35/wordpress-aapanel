@@ -173,8 +173,8 @@ WordPress เป็นงานที่รอฐานข้อมูลแล�
 ### ⭐ ทางที่เร็วที่สุด: รันสคริปต์ตัวเดียวจบ
 
 ```powershell
-ssh root@SERVER_IP "bash /root/wpaa/scripts/apply-mysql-config.sh --check"     # ดูก่อน
-ssh root@SERVER_IP "bash /root/wpaa/scripts/apply-mysql-config.sh --restart"   # แก้แล้ว restart
+ssh root@SERVER_IP "bash /tmp/wpaa/scripts/apply-mysql-config.sh --check"     # ดูก่อน
+ssh root@SERVER_IP "bash /tmp/wpaa/scripts/apply-mysql-config.sh --restart"   # แก้แล้ว restart
 ```
 
 ตั้งครบทั้ง 12 ค่าในหน้านี้ รวมของที่ GUI ไม่มีให้แก้ · รายละเอียดและความปลอดภัยที่ใส่ไว้
