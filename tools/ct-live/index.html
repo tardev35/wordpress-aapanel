@@ -63,6 +63,8 @@ input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .live i{width:7px;height:7px;border-radius:50%;background:var(--teal);animation:blip 1.4s infinite}
 @keyframes blip{0%,100%{opacity:1}50%{opacity:.2}}
 .live.off{color:var(--faint)} .live.off i{background:var(--faint);animation:none}
+.chip{background:var(--alert-soft);border-color:var(--alert);color:var(--alert);font-size:12.5px;padding:5px 11px}
+.chip:hover{background:var(--alert);color:var(--panel);border-color:var(--alert)}
 
 /* ---- แท็บ ---- */
 .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:0;padding-bottom:0}
@@ -115,7 +117,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <a data-page="logs">ล็อกที่ใช้ได้<span class="k" id="navLogs">–</span></a>
       <a data-page="about">ท่อนี้คืออะไร</a>
       <div class="navhead">กรอง</div>
-      <a data-page="stream" id="navMine">โดเมนของเรา<span class="k" id="navMineC">0</span></a>
+      <a data-page="stream" id="navMine">เฉพาะโดเมนของเรา<span class="k" id="navMineC">ปิด</span></a>
     </nav>
   </aside>
 
@@ -131,6 +133,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         <input type="text" id="q" placeholder="ไฮไลต์คำ เช่น login, bank">
         <button id="btnClear">ล้าง</button>
         <span class="live off" id="liveDot"><i></i><span id="liveTxt">หยุดอยู่</span></span>
+        <button id="chipMine" class="chip" hidden>กรอง: เฉพาะโดเมนของเรา ✕</button>
       </div>
 
       <div class="tabs" id="tabs"></div>
@@ -207,13 +210,21 @@ function setPage(p){
 }
 document.querySelectorAll("#nav a").forEach(function(a){
   a.addEventListener("click",function(){
-    if(a.id==="navMine"){ mineOnly=!mineOnly; a.classList.toggle("on",mineOnly); setPage("stream");
-      document.querySelector('#nav a[data-page="stream"]').classList.toggle("on",!mineOnly);
-      render(); return; }
+    if(a.id==="navMine"){ setMine(!mineOnly); return; }
     setPage(a.dataset.page); a.classList.add("on");
     if(a.dataset.page==="logs") loadLogs();
   });
 });
+
+function setMine(on){
+  mineOnly=on;
+  document.getElementById("navMineC").textContent = on ? "เปิด" : "ปิด";
+  document.getElementById("navMine").classList.toggle("on",on);
+  document.getElementById("chipMine").hidden=!on;
+  setPage("stream");
+  document.querySelector('#nav a[data-page="stream"]').classList.add("on");
+  render();
+}
 
 function drawTabs(){
   var counts={all:rows.length};
@@ -238,7 +249,15 @@ function render(){
   });
   $("#navCount").textContent=rows.length;
   if(!list.length){
-    $("#rows").innerHTML='<div class="empty">'+(rows.length?"ไม่มีรายการในแท็บนี้":"ยังไม่มีข้อมูล — กด “เริ่มสตรีม”")+'</div>';
+    var why;
+    if(!rows.length)      why='ยังไม่มีข้อมูล — กด “เริ่มสตรีม”';
+    else if(mineOnly)     why='มี '+rows.length+' รายการ แต่ถูกกรองออกหมด<br>'+
+                              '<b>ตัวกรอง “เฉพาะโดเมนของเรา” เปิดอยู่</b> — โดเมนของเราจะโผล่ก็ต่อเมื่อมีการออก cert ใหม่จริง ๆ '+
+                              'ซึ่งนาน ๆ ครั้ง<br><button id="offMine">ปิดตัวกรอง แสดงทั้งหมด</button>';
+    else                  why='แท็บนี้ยังไม่มีรายการ — log นี้อาจยังไม่ตอบในรอบล่าสุด';
+    $("#rows").innerHTML='<div class="empty">'+why+'</div>';
+    var b=document.getElementById("offMine");
+    if(b) b.addEventListener("click",function(){setMine(false)});
     return;
   }
   $("#rows").innerHTML=list.map(function(r){
@@ -276,6 +295,7 @@ $("#btnLive").addEventListener("click",function(){setLive(!live)});
 $("#btnOnce").addEventListener("click",fetchOnce);
 $("#btnClear").addEventListener("click",function(){rows=[];drawTabs();render()});
 $("#q").addEventListener("input",render);
+$("#chipMine").addEventListener("click",function(){setMine(false)});
 
 function loadLogs(){
   fetch("/api/logs").then(function(r){return r.json()}).then(function(l){
@@ -293,7 +313,7 @@ function loadLogs(){
 
 // โดเมนของเราเอง - แก้รายชื่อตรงนี้ได้ หรือปล่อยว่างถ้าไม่ต้องใช้
 mine=["bbc29pro.com","neda88-pro.com"];
-$("#navMineC").textContent=mine.length;
+
 loadLogs();
 </script>
 </body>
