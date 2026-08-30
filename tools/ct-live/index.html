@@ -67,6 +67,16 @@ input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .chip:hover{background:var(--alert);color:var(--panel);border-color:var(--alert)}
 
 /* ---- แท็บ ---- */
+.cov{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.cov b{font-weight:500}
+.cov .c{display:flex;gap:6px;align-items:baseline;font-size:11.5px;padding:3px 9px;
+  border:1px solid var(--line);border-radius:20px;background:var(--panel);
+  font-family:"IBM Plex Mono",monospace}
+.cov .c .p{font-weight:500}
+.cov .c.lo .p{color:var(--alert)}
+.cov .c.mid .p{color:var(--amber)}
+.cov .c.hi .p{color:var(--ok,var(--dim))}
+.cov .sum{font-size:12.5px;color:var(--dim);width:100%;margin-bottom:2px;font-family:inherit}
 .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:0;padding-bottom:0}
 .tab{white-space:nowrap;padding:8px 13px;border:0;border-bottom:2px solid transparent;
   background:none;color:var(--dim);border-radius:0;font-size:13.5px}
@@ -105,6 +115,8 @@ a.ct:hover{color:var(--alert)}
 .mk{display:inline-block;font-size:10px;padding:0 6px;border-radius:20px;margin-left:6px;
   background:var(--panel-2);color:var(--faint);vertical-align:1px;font-family:system-ui,sans-serif}
 .mk.th{background:var(--alert-soft);color:var(--alert);font-weight:500}
+.mk.age{background:var(--panel-2);color:var(--dim);font-family:"IBM Plex Mono",monospace}
+.mk.age.fresh{background:var(--alert-soft);color:var(--alert);font-weight:500}
 .mk.pv{background:var(--amber-soft);color:var(--amber);font-family:"IBM Plex Mono",monospace}
 .empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
 
@@ -155,6 +167,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         <button id="chipMine" class="chip" hidden>กรอง: เฉพาะโดเมนของเรา ✕</button>
       </div>
 
+      <div class="cov" id="cov" hidden></div>
       <div class="tabs" id="tabs"></div>
       <div class="card">
         <div class="rows" id="rows"><div class="empty">กด “เริ่มสตรีม” เพื่อดึงข้อมูลจาก CT log</div></div>
@@ -184,6 +197,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
           <input type="checkbox" id="aiAuto"> ทำอัตโนมัติทุกรอบที่ดึง
         </label>
         <button id="btnProbe">เปิดดูหน้าเว็บจริง</button>
+        <button id="btnAge">เช็ควันจดโดเมน</button>
         <button id="btnAiClear">ล้างผล</button>
         <span class="live off" id="aiDot"><i></i><span id="aiTxt">ยังไม่ได้เรียก</span></span>
       </div>
@@ -206,7 +220,14 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         ต้องใช้คู่กันถึงจะได้ <b>ไทย + พนัน</b><br>
         ข้อควรระวังอีก 2 อย่าง — เว็บหลายภาษาเปลี่ยน <span class="mono">lang</span>
         ตามผู้เข้าชม (google.com ขึ้น <span class="mono">th-sg</span>) จึงดูจำนวนอักษรไทยประกอบ
-        และการเปิดเว็บทำจาก<b>เครื่องนี้</b> เว็บปลายทางจะเห็น IP ของคุณ
+        และการเปิดเว็บทำจาก<b>เครื่องนี้</b> เว็บปลายทางจะเห็น IP ของคุณ<br><br>
+        <b>เช็ควันจดโดเมน</b> ถามจากทะเบียนโดยตรงผ่าน RDAP แสดงเป็นวันแบบไทย (พ.ศ.)
+        พร้อมอายุเป็นจำนวนวัน — โดเมนที่จดมา<b>ไม่เกิน 30 วัน</b>จะขึ้นสีแดง
+        เพราะเป็นกลุ่มที่บอทเล็งที่สุด <span class="mono">bbc29pro.com</span>
+        ถูกเจาะตอนอายุ <b>6 วัน</b><br>
+        บางนามสกุลไม่เปิดให้ถาม (เช่น <span class="mono">.co</span> ของโคลอมเบีย) จะขึ้นว่าไม่รู้วันจด
+        และทะเบียนจำกัดจำนวนคำขอต่อ IP — ถ้าเช็คเยอะ ตั้ง
+        <span class="mono">PROXY_URL</span> ใน <span class="mono">.env</span> ได้
       </p>
     </div>
 
@@ -343,6 +364,29 @@ function render(){
   rows.forEach(function(r){r._n=false});
 }
 
+// ตัวเลขนี้บอกความจริงว่าเราตกไปเท่าไร ไม่ใช่แค่ว่าดึงมาได้กี่ใบ
+function drawCov(){
+  fetch("/api/coverage").then(function(r){return r.json()}).then(function(cs){
+    if(!cs||!cs.length){ $("#cov").hidden=true; return; }
+    var got=0, grew=0, behind=0;
+    cs.forEach(function(c){ got+=c.got||0; grew+=c.grew||0; behind+=c.behind||0 });
+    var pct = grew ? Math.round(100*got/grew) : null;
+    $("#cov").hidden=false;
+    $("#cov").innerHTML=
+      '<div class="sum">ไล่อ่านต่อเนื่องจากจุดที่ค้างไว้ ไม่ได้สุ่มปลายต้นไม้ — '+
+      'อ่านไปแล้ว <b>'+got.toLocaleString()+'</b> ใบ จากที่ log เพิ่มขึ้น <b>'+
+      grew.toLocaleString()+'</b> ใบ'+(pct!==null?' = <b>'+pct+'%</b>':'')+
+      ' · ตามหลังอยู่ <b>'+behind.toLocaleString()+'</b> ใบ</div>'+
+      cs.map(function(c){
+        var p=c.pct, k = p===null?"":(p>=80?"hi":p>=30?"mid":"lo");
+        return '<span class="c '+k+'" title="อ่านได้ '+c.got+' / log เพิ่ม '+c.grew+'">'+
+          esc(c.id)+' <span class="p">'+(p===null?"–":p+"%")+'</span>'+
+          (c.behind?' <span style="color:var(--faint)">-'+c.behind.toLocaleString()+'</span>':'')+
+          '</span>';
+      }).join("");
+  }).catch(function(){});
+}
+
 function fetchOnce(){
   return fetch("/api/entries?n=12").then(function(r){return r.json()}).then(function(nw){
     nw.forEach(function(r){
@@ -351,7 +395,7 @@ function fetchOnce(){
       r._n=true;
     });
     rows=nw.concat(rows).slice(0,900);
-    drawTabs(); render();
+    drawTabs(); render(); drawCov();
     if(aiAuto && nw.length) pipeline();
   }).catch(function(){});
 }
@@ -492,6 +536,10 @@ function aiDraw(){
     var mk = isTh(r) ? '<span class="mk th">ไทย</span>'
            : r.m==="cn" ? '<span class="mk">จีน</span>'
            : r.m==="other" ? '<span class="mk">อื่น</span>' : '';
+    if(r.a) mk += r.a.th
+      ? '<span class="mk age'+(r.a.days!==null&&r.a.days<=30?" fresh":"")+'" title="จดเมื่อ '+
+        esc(r.a.th)+'">จด '+esc(r.a.th)+(r.a.days!==null?' · '+r.a.days+' วัน':'')+'</span>'
+      : '<span class="mk" title="'+esc(r.a.err||"")+'">ไม่รู้วันจด</span>';
     if(r.p) mk += r.p.ok
       ? '<span class="mk pv" title="'+esc(r.p.title||"")+'">'+esc(r.p.lang||"ไม่ระบุ lang")+
         (r.p.chars?' · ไทย '+r.p.chars+' ตัว':'')+'</span>'
@@ -629,6 +677,30 @@ $("#btnProbe").addEventListener("click",function(){
     .catch(function(){ $("#aiDot").className="live off"; $("#aiTxt").textContent="เปิดหน้าเว็บไม่สำเร็จ"; });
 });
 $("#aiAuto").addEventListener("change",function(){aiAuto=this.checked});
+
+// วันจดโดเมนมาจาก RDAP ของทะเบียนโดยตรง ไม่ใช่การเดา
+// โดเมนที่จดมาไม่กี่วันคือกลุ่มที่บอทเล็งที่สุด - bbc29pro.com โดนแฮ็กตอนอายุ 6 วัน
+$("#btnAge").addEventListener("click",function(){
+  var list=ai.filter(function(r){return aiTab==="all"||(aiTab==="th"?r.v!=="no"&&isTh(r):r.v===aiTab)})
+             .filter(function(r){return !r.a}).slice(0,60);
+  if(!list.length){ $("#aiTxt").textContent="เช็ควันจดครบแล้ว"; return; }
+  $("#aiDot").className="live"; $("#aiTxt").textContent="เช็ควันจด "+list.length+" โดเมน...";
+  fetch("/api/age",{method:"POST",headers:{"Content-Type":"application/json"},
+                    body:JSON.stringify(list.map(function(r){return r.d}))})
+    .then(function(r){return r.json()}).then(function(res){
+      $("#aiDot").className="live off";
+      var by={}; (res.rows||[]).forEach(function(x){by[x.d]=x});
+      var fresh=0, ok=0;
+      ai.forEach(function(r){
+        var x=by[r.d]; if(!x) return;
+        r.a={th:x.th||"",days:(x.days===undefined?null:x.days),err:x.err||""};
+        if(r.a.th){ ok++; if(r.a.days!==null&&r.a.days<=30) fresh++; }
+      });
+      $("#aiTxt").textContent="รู้วันจด "+ok+" จาก "+list.length+" · จดใหม่ไม่เกิน 30 วัน "+fresh;
+      aiDraw();
+    })
+    .catch(function(){ $("#aiDot").className="live off"; $("#aiTxt").textContent="เช็ควันจดไม่สำเร็จ"; });
+});
 
 fetch("/api/ai-status").then(function(r){return r.json()}).then(function(s){
   if(!s.ready){ $("#aiWarn").hidden=false;

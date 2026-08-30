@@ -44,7 +44,8 @@ def load_env():
     """
     import os
     cfg = {"key": os.environ.get("OPENROUTER_API_KEY", ""),
-           "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-3.1-flash-lite")}
+           "proxy": os.environ.get("PROXY_URL", ""),
+        "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-3.1-flash-lite")}
     f = HERE / ".env"
     if f.exists():
         for line in f.read_text(encoding="utf-8").splitlines():
@@ -57,6 +58,8 @@ def load_env():
                 cfg["key"] = v
             elif k == "OPENROUTER_MODEL":
                 cfg["model"] = v
+            elif k in ("PROXY_URL", "HTTPS_PROXY", "HTTP_PROXY") and not cfg["proxy"]:
+                cfg["proxy"] = v
     return cfg
 
 
@@ -281,6 +284,110 @@ def probe_many(doms, workers=32):
 
 
 
+# ---------------------------------------------------------------- วันจดโดเมน
+# ใช้ RDAP ไม่ใช่ WHOIS - RDAP คืน JSON มีมาตรฐาน ไม่ต้องเดาว่าแต่ละ registry
+# จัดหน้าข้อความยังไง (WHOIS แต่ละเจ้าเขียนคนละแบบหมด)
+# ทะเบียนจำกัดจำนวนคำขอต่อ IP หนัก ถ้าตั้ง PROXY_URL ใน .env จะยิงผ่าน proxy ให้
+RDAP_BOOT = "https://data.iana.org/rdap/dns.json"
+_rdap_srv = {}
+_rdap_cache = {}
+_rdap_lock = threading.Lock()
+
+TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+          "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+
+
+def thai_date(iso):
+    """2026-08-12T04:11:22Z -> 12 ส.ค. 2569  (พ.ศ. = ค.ศ. + 543)"""
+    try:
+        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except Exception:
+        return ""
+    return "%d %s %d" % (d.day, TH_MON[d.month], d.year + 543)
+
+
+def _opener():
+    px = ENV.get("proxy")
+    if px:
+        return urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": px, "https": px}))
+    return urllib.request.build_opener()
+
+
+def rdap_servers():
+    with _rdap_lock:
+        if _rdap_srv:
+            return _rdap_srv
+    try:
+        d = http_json(RDAP_BOOT, timeout=20)
+    except Exception:
+        return {}
+    m = {}
+    for tlds, urls in d.get("services", []):
+        for tld in tlds:
+            if urls:
+                m[tld.lower()] = urls[0].rstrip("/")
+    with _rdap_lock:
+        _rdap_srv.update(m)
+    return m
+
+
+def domain_age(name):
+    """คืนวันจดโดเมน - เอาเฉพาะ registrable domain ไม่ใช่ subdomain"""
+    host = str(name)[:120].lower().lstrip("*.").rstrip(".")
+    parts = host.split(".")
+    srv = rdap_servers()
+    reg = ""
+    for i in range(len(parts) - 2, -1, -1):       # ลองจากยาวไปสั้น หา TLD ที่รู้จัก
+        cand = ".".join(parts[i:])
+        tld = ".".join(parts[i + 1:])
+        if tld in srv:
+            reg = cand
+            break
+    if not reg:
+        reg = ".".join(parts[-2:])
+    with _rdap_lock:
+        hit = _rdap_cache.get(reg)
+    if hit is not None:
+        return dict(hit, d=name)
+
+    out = {"d": name, "reg": reg, "created": "", "th": "", "days": None, "err": ""}
+    base = srv.get(".".join(reg.split(".")[1:]))
+    urls = ([base + "/domain/" + reg] if base else []) + ["https://rdap.org/domain/" + reg]
+    for u in urls:
+        try:
+            req = urllib.request.Request(u, headers={"Accept": "application/rdap+json",
+                                                     "User-Agent": BROWSER_UA})
+            with _opener().open(req, timeout=12) as r:
+                d = json.loads(r.read(400000).decode("utf-8", "ignore"))
+        except Exception as ex:
+            out["err"] = type(ex).__name__
+            continue
+        for ev in d.get("events", []):
+            if ev.get("eventAction") in ("registration", "last changed") and not out["created"]:
+                if ev.get("eventAction") == "registration":
+                    out["created"] = ev.get("eventDate", "")
+        if out["created"]:
+            out["th"] = thai_date(out["created"])
+            try:
+                born = datetime.fromisoformat(out["created"].replace("Z", "+00:00"))
+                out["days"] = (datetime.now(timezone.utc) - born).days
+            except Exception:
+                pass
+            out["err"] = ""
+            break
+    with _rdap_lock:
+        if len(_rdap_cache) < 20000:
+            _rdap_cache[reg] = out
+    return out
+
+
+def ages_many(doms, workers=8):
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(domain_age, doms))
+
+
+
 # ---------------------------------------------------------------- logs
 SHARD_RE = re.compile(r"^20\d\dh[12]$")
 
@@ -330,56 +437,131 @@ def usable_logs(force=False):
     return out
 
 
-def pull(log, n=12):
-    """ดึง entry ท้าย ๆ ของ log หนึ่งตัว แล้วแกะเป็นรายการโดเมน"""
+# ตำแหน่งที่อ่านค้างไว้ของแต่ละ log - หัวใจของ follow mode
+# แบบเดิมดึงแค่ n ใบท้ายสุดทุกรอบ ระหว่างรอบมีใบไหลผ่านไปหลายพันใบโดยไม่เห็น
+# แบบนี้จำไว้ว่าอ่านถึงไหน แล้วอ่านต่อจากตรงนั้น ไม่ข้ามภายในกำลังที่ไหว
+_cursor = {}
+_stat = {}
+_cur_lock = threading.Lock()
+_yield = {}          # log นี้ให้กี่ใบต่อคำขอ วัดจากของจริง
+PAR_RANGES = 8       # ยิงกี่ช่วงพร้อมกันต่อ log
+
+
+def pull(log, budget=200, deadline=None):
+    """ไล่อ่าน entry ต่อจากที่ค้างไว้ ไม่เกิน budget ใบ และไม่เกินเวลาที่กำหนด
+
+    เพดานเวลาสำคัญกว่าเพดานจำนวน - log ที่ให้ทีละ 9 ใบจะลากรอบยาวมาก
+    ถ้าไม่ตัด หน้าเว็บจะค้างรอ log ที่ช้าที่สุดเสมอ"""
+    lid = log["id"]
     try:
         sth = http_json(log["url"] + "/ct/v1/get-sth", timeout=12)
         size = int(sth["tree_size"])
-        _sth[log["id"]] = {"size": size, "ts": int(sth.get("timestamp", 0)) // 1000,
-                           "at": int(time.time())}
+        _sth[lid] = {"size": size, "ts": int(sth.get("timestamp", 0)) // 1000,
+                     "at": int(time.time())}
     except Exception:
         return []
-    start, end = max(0, size - n), size - 1
-    try:
-        data = http_json(f"{log['url']}/ct/v1/get-entries?start={start}&end={end}", timeout=25)
-    except Exception:
-        return []
-    rows = []
-    for e in data.get("entries", []):
-        r = decode_entry(e)
-        if not r:
-            continue
-        key = (r["d"], r["t"])
-        if key in _seen:
-            continue
-        _seen.add(key)
-        _seen_order.append(key)
-        if len(_seen_order) > 4000:                   # กันหน่วยความจำโต
-            _seen.discard(_seen_order.pop(0))
-        r["log"] = log["op"]
-        r["id"] = log["id"]
-        rows.append(r)
+
+    with _cur_lock:
+        cur = _cursor.get(lid)
+        if cur is None or cur > size:
+            cur = max(0, size - budget)          # รอบแรกเริ่มใกล้ปลาย
+        st = _stat.setdefault(lid, {"got": 0, "grew": 0, "last_size": size})
+        st["grew"] += max(0, size - st["last_size"])
+        st["last_size"] = size
+
+    # แต่ละ log ยอมให้กี่ใบต่อคำขอไม่เท่ากัน (argon 9, nimbus 256) เพราะจำกัดที่
+    # ขนาดไบต์ ไม่ใช่จำนวน ถ้ายิงทีละคำขอเรียงกัน log ที่ให้น้อยจะช้ามาก
+    # จึงจำค่าที่ได้จริงไว้ แล้วยิงหลายช่วงพร้อมกันโดยใช้ค่านั้นเป็นขนาดหน้าต่าง
+    step = _yield.get(lid, 256)
+    rows, got = [], 0
+    while got < budget and cur < size:
+        if deadline and time.time() > deadline:
+            break
+        wins, s = [], cur
+        for _ in range(PAR_RANGES):
+            if s >= size or len(wins) * step >= budget - got:
+                break
+            wins.append((s, min(s + step - 1, size - 1)))
+            s += step
+        if not wins:
+            break
+
+        def fetch(w):
+            try:
+                return w, http_json(
+                    f"{log['url']}/ct/v1/get-entries?start={w[0]}&end={w[1]}", timeout=25)
+            except Exception:
+                return w, None
+
+        with ThreadPoolExecutor(max_workers=len(wins)) as ex:
+            parts = dict(ex.map(fetch, wins))
+
+        ents, advanced = [], 0
+        for w in wins:                        # เรียงตามลำดับ หยุดที่ช่วงแรกที่ไม่เต็ม
+            d = parts.get(w)
+            got_w = d.get("entries", []) if d else []
+            ents.extend(got_w)
+            advanced += len(got_w)
+            if len(got_w) < (w[1] - w[0] + 1):
+                break                         # ขาดตรงนี้ รอบหน้าค่อยมาต่อ ไม่ข้าม
+        if not ents:
+            break
+        if ents:
+            _yield[lid] = max(1, len(parts.get(wins[0], {}).get("entries", [])) or step)
+        for e in ents:
+            r = decode_entry(e)
+            if not r:
+                continue
+            key = (r["d"], r["t"])
+            if key in _seen:
+                continue
+            _seen.add(key)
+            _seen_order.append(key)
+            if len(_seen_order) > 20000:
+                _seen.discard(_seen_order.pop(0))
+            r["log"] = log["op"]
+            r["id"] = lid
+            rows.append(r)
+        cur += advanced
+        got += advanced
+
+    with _cur_lock:
+        _cursor[lid] = cur
+        _stat[lid]["got"] += got
+        _stat[lid]["behind"] = max(0, size - cur)
     return rows
 
 
-def sweep(n=12):
+def sweep(budget=200, seconds=20):
     rows = []
-    threads = []
     lock = threading.Lock()
+    deadline = time.time() + seconds
 
     def worker(lg):
-        got = pull(lg, n)
+        got = pull(lg, budget, deadline)
         with lock:
             rows.extend(got)
 
-    for lg in usable_logs():
-        t = threading.Thread(target=worker, args=(lg,), daemon=True)
-        t.start()
-        threads.append(t)
+    threads = [threading.Thread(target=worker, args=(lg,), daemon=True)
+               for lg in usable_logs()]
     for t in threads:
-        t.join(timeout=30)
+        t.start()
+    for t in threads:
+        t.join(timeout=seconds + 15)
     rows.sort(key=lambda r: r["t"])
     return rows
+
+
+def coverage():
+    """อ่านไปได้กี่ % ของที่ log เพิ่มขึ้นจริง - ตัวเลขนี้บอกความจริงว่าตกไปเท่าไร"""
+    out = []
+    with _cur_lock:
+        for lid, s in _stat.items():
+            grew = s.get("grew", 0)
+            out.append({"id": lid, "got": s["got"], "grew": grew,
+                        "behind": s.get("behind", 0),
+                        "pct": round(100.0 * s["got"] / grew, 1) if grew else None})
+    return sorted(out, key=lambda x: -(x["behind"] or 0))
 
 
 # ---------------------------------------------------------------- AI
@@ -489,14 +671,20 @@ class Handler(BaseHTTPRequestHandler):
 
         elif self.path.startswith("/api/entries"):
             m = re.search(r"[?&]n=(\d+)", self.path)
-            n = min(int(m.group(1)), 40) if m else 12
+            n = min(int(m.group(1)), 5000) if m else 400
+            ms = re.search(r"[?&]s=(\d+)", self.path)
+            secs = min(int(ms.group(1)), 120) if ms else 20
             try:
-                rows = sweep(n)
+                rows = sweep(n, secs)
             except Exception as ex:
                 rows = []
                 print("sweep error:", ex)
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(rows, ensure_ascii=False).encode())
+        elif self.path == "/api/coverage":
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps(coverage(), ensure_ascii=False).encode())
+
         elif self.path == "/api/vocab":
             # คำที่ถอดจากโดเมนจริงด้วย tune.py - ไม่มีไฟล์ก็ใช้กฎโครงสร้างอย่างเดียว
             # vocab.json = ตัวเต็ม มีชื่อแบรนด์ อยู่แค่ในเครื่อง
@@ -516,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"not found")
 
     def do_POST(self):
-        if self.path not in ("/api/classify", "/api/probe"):
+        if self.path not in ("/api/classify", "/api/probe", "/api/age"):
             self._send(404, "text/plain; charset=utf-8", b"not found")
             return
         n = int(self.headers.get("Content-Length", 0))
@@ -525,6 +713,11 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self._send(400, "application/json; charset=utf-8",
                        json.dumps({"error": "payload ไม่ถูกต้อง"}, ensure_ascii=False).encode())
+            return
+        if self.path == "/api/age":
+            rows = ages_many([str(d)[:120] for d in doms if d][:60])
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps({"rows": rows}, ensure_ascii=False).encode())
             return
         if self.path == "/api/probe":
             rows = probe_many([str(d)[:120] for d in doms if d][:150])
