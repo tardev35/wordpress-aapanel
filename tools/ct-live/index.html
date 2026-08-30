@@ -521,25 +521,18 @@ function isTh(r){
 // "จดใหม่" = จดมาไม่เกินกี่วัน — กลุ่มที่บอทเล็งที่สุด (bbc29pro โดนตอนอายุ 6 วัน)
 var FRESH_DAYS=30;
 // ตัวกรองแท็บชุดเดียว ใช้ร่วมกันทั้งการนับ การแสดงผล และปุ่มเปิดเว็บ/เช็ควันจด
-// เว็บพนันจริงมีเนื้อหาไทยหลายร้อย-พันตัว; หน้า parking/placeholder/ns มีนิดเดียว (เช่น 72)
-var LIVE_MIN_TH=150;
 function isParked(r){ return !!(r.p && r.p.ok && r.p.parked); }  // หน้ายังเป็นของผู้ให้บริการโดเมน
-// เปิดได้ + ธงว่าไทย แต่เนื้อหาไทยน้อยมาก = หน้า placeholder/ns parking ยังไม่ใช่เว็บจริง
-function isThin(r){ return !!(r.p && r.p.ok && !r.p.parked && r.p.th && (r.p.chars||0)<LIVE_MIN_TH); }
-// "ขึ้นเว็บแล้ว" ต้องครบทุกข้อ: เปิดหน้าได้จริง + ไม่ใช่หน้าจอด + เนื้อหาไทย "เยอะจริง" (>=LIVE_MIN_TH)
-// Gemini อ่าน title ได้แค่ "ตัดออก" (r.live===false = for-sale/coming-soon) ดันหน้าบางเข้าไม่ได้
-// เหตุผล: title พนัน (เช่น 168PG) บนหน้าที่เนื้อห ยังบาง = จดแล้วแปะ title ไว้ ยังไม่ทำเว็บจริง
+// "ขึ้นเว็บแล้ว" = Gemini อ่าน title+description แล้วยืนยันว่าเป็นเว็บพนันที่เปิดจริง (r.live===true)
+// ไม่นับจำนวนตัวอักษรไทย เพราะเว็บ JS มีข้อความไทยในหน้าน้อยแต่ title โปรยชัด (เช่น london45)
 function isLive(r){
-  return r.v!=="no" && r.p && r.p.ok && !r.p.parked
-      && (r.p.chars||0)>=LIVE_MIN_TH && r.live!==false;
+  return r.v!=="no" && r.p && r.p.ok && !r.p.parked && r.live===true;
 }
 function aiMatch(r,t){
   if(t==="all")   return true;
   if(t==="th")    return r.v!=="no" && isTh(r);                        // รวมไทย: พนัน + เป็นไทย
-  if(t==="fresh") return r.v!=="no" && isTh(r) &&                      // จดใหม่: ยังไม่ขึ้นเว็บจริง
-                         ((r.a && r.a.days!==null && r.a.days<=FRESH_DAYS)
-                          || isParked(r) || isThin(r) || r.live===false);
-  if(t==="live")  return isLive(r);                                    // ขึ้นเว็บแล้ว
+  if(t==="fresh") return r.v!=="no" && isTh(r) &&                      // จดใหม่: จดไม่นาน / ยังจอดโดเมน
+                         ((r.a && r.a.days!==null && r.a.days<=FRESH_DAYS) || isParked(r));
+  if(t==="live")  return isLive(r);                                    // ขึ้นเว็บแล้ว: Gemini ยืนยันจาก title
   return r.v===t;                                                      // yes / maybe / no
 }
 
@@ -597,13 +590,8 @@ function aiDraw(){
       if(!r.p.ok) mk += '<span class="mk">เปิดไม่ได้</span>';
       else if(r.p.parked) mk += '<span class="mk park" title="หน้ายังเป็นของผู้ให้บริการโดเมน '+
         esc(r.p.parked)+' = จดแล้วยังไม่ทำเว็บ">จอดโดเมน · '+esc(r.p.parked)+'</span>';
-      else {
-        var thin=r.p.th && (r.p.chars||0)<LIVE_MIN_TH;   // เนื้อหาไทยน้อย = placeholder/ns parking
-        mk += '<span class="mk '+(thin?"park":"pv")+'" title="'+esc(r.p.title||"")+
-          (thin?" — เนื้อหาไทยน้อย น่าจะยังเป็นหน้า placeholder/ns parking":"")+'">'+
-          esc(r.p.lang||"ไม่ระบุ lang")+(r.p.chars?' · ไทย '+r.p.chars+' ตัว':'')+
-          (thin?' · หน้าบาง':'')+'</span>';
-      }
+      else mk += '<span class="mk pv" title="'+esc((r.p.title||"")+(r.p.desc?" — "+r.p.desc:""))+'">'+
+        esc(r.p.lang||"ไม่ระบุ lang")+(r.p.chars?' · ไทย '+r.p.chars+' ตัว':'')+'</span>';
     }
     if(isLive(r)) mk += '<span class="mk live" title="เปิดหน้าได้จริง + เนื้อหาไทยเยอะ'+
       (r.live===true?' + Gemini ยืนยันจาก title':'')+'">✓ ขึ้นแล้ว</span>';
@@ -687,7 +675,7 @@ function pipeline(){
             if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
             var x=probed[r.d];
             if(x) r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,
-                       title:x.title||"",parked:x.parked||""};
+                       title:x.title||"",desc:x.desc||"",parked:x.parked||""};
             ai.unshift(r);
             if(r.v!=="no" && isTh(r)) newHits.push(r);   // ยืนยันว่าไทย+พนัน = ของใหม่ที่ต้องเตือน
           });
@@ -756,7 +744,7 @@ $("#btnProbe").addEventListener("click",function(){
       ai.forEach(function(r){
         var x=by[r.d]; if(!x) return;
         r.p={ok:!x.err, th:!!x.th, lang:x.lang||"", chars:x.thai_chars||0,
-             title:x.title||"", parked:x.parked||""};
+             title:x.title||"", desc:x.desc||"", parked:x.parked||""};
         if(r.p.ok&&r.p.th) th++;
       });
       $("#aiTxt").textContent="เปิดได้ "+(res.rows||[]).filter(function(x){return !x.err}).length+
@@ -802,14 +790,18 @@ function notifyFresh(r){
 // ให้ Gemini อ่าน "title" ของหน้าที่ probe มาแล้ว บอกว่าเป็นเว็บพนันเปิดจริงไหม -> r.live
 // ส่งเฉพาะ title ที่ดึงมาแล้ว ไม่ได้เปิดเว็บซ้ำ ทำเฉพาะตัวไทย+พนัน ที่ยังไม่เช็ค
 function checkLive(rows){
-  var need=(rows||ai).filter(function(r){
-    // ถาม Gemini เฉพาะตัวที่เนื้อหาถึงเกณฑ์ (มีสิทธิ์เป็น live จริง) — หน้าบางข้าม ประหยัด token
-    return r.v!=="no" && r.p && r.p.ok && !r.p.parked && r.p.title
-        && (r.p.chars||0)>=LIVE_MIN_TH && r.live===undefined;
+  var pool=(rows||ai), changed=false;
+  // เปิดหน้าได้แต่ไม่มี title/description เลย = ยืนยันไม่ได้ ตั้ง false ไปเลย ไม่ต้องถาม Gemini
+  pool.forEach(function(r){
+    if(r.v!=="no" && r.p && r.p.ok && !r.p.parked && r.live===undefined && !r.p.title && !r.p.desc){
+      r.live=false; changed=true; }
+  });
+  var need=pool.filter(function(r){
+    return r.v!=="no" && r.p && r.p.ok && !r.p.parked && r.live===undefined && (r.p.title||r.p.desc);
   }).slice(0,60);
-  if(!need.length) return Promise.resolve(0);
+  if(!need.length){ if(changed) aiDraw(); return Promise.resolve(0); }
   return fetch("/api/live",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(need.map(function(r){return {d:r.d,title:r.p.title}}))})
+      body:JSON.stringify(need.map(function(r){return {d:r.d,title:r.p.title||"",desc:r.p.desc||""}}))})
     .then(function(r){return r.json()}).then(function(res){
       if(res&&res.error) return 0;
       var by={}; ((res&&res.rows)||[]).forEach(function(x){by[x.d]=x});
@@ -847,7 +839,7 @@ function ensureLive(){
         var by={}; (res.rows||[]).forEach(function(x){by[x.d]=x});
         probed=Object.assign(probed,by);
         ai.forEach(function(r){ var x=by[r.d]; if(x)
-          r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||"",parked:x.parked||""}; });
+          r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||"",desc:x.desc||"",parked:x.parked||""}; });
         // กันวนไม่จบ: ตัวใน batch ที่ไม่มีผลกลับมา ให้ทำเป็น "เปิดไม่ได้" จะได้ไม่ถูกหยิบซ้ำ
         batch.forEach(function(d){ if(!by[d]) ai.forEach(function(r){
           if(r.d===d && !r.p) r.p={ok:false,th:false,lang:"",chars:0,title:"",parked:""}; }); });
@@ -880,7 +872,7 @@ function loadHits(){
       // ของที่ยังจอดโดเมน: หน้าไม่ใช่เว็บจริง จึง th=false (ให้ isTh ตกไปใช้ชื่อ/โมเดล)
       var pk=h.parked||"", lv=h.live||"";
       ai.push({d:h.d, v:h.v||"no", m:h.m||"", w:h.w||"",
-        p:{ok:true, th:pk?false:true, parked:pk, lang:h.lang||"", chars:h.chars||0, title:h.title||""},
+        p:{ok:true, th:pk?false:true, parked:pk, lang:h.lang||"", chars:h.chars||0, title:h.title||"", desc:""},
         a:{th:h.th||"", days:(h.age_days===null?null:h.age_days), via:h.via||"", err:""},
         live:(lv==="yes"?true:lv==="no"?false:undefined),   // สถานะ Gemini อ่าน title (ถ้าเคยเช็ค)
         _n:false, _notified:true});   // ของเก่า ไม่เด้งเตือนซ้ำ

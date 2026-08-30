@@ -48,7 +48,7 @@ def load_env():
     import os
     cfg = {"key": os.environ.get("OPENROUTER_API_KEY", ""),
            "proxy": os.environ.get("PROXY_URL", ""),
-        "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-3.1-flash-lite")}
+        "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash-lite")}
     f = HERE / ".env"
     if f.exists():
         for line in f.read_text(encoding="utf-8").splitlines():
@@ -298,6 +298,9 @@ RE_LANG = re.compile(rb"<html[^>]*\slang\s*=\s*[\"']?([a-zA-Z\-]{2,10})", re.I)
 RE_TITLE = re.compile(rb"<title[^>]*>(.{0,200}?)</title>", re.I | re.S)
 RE_OGLOC = re.compile(rb"og:locale[\"'][^>]*content=[\"']([a-zA-Z_\-]{2,10})", re.I)
 RE_THAI = re.compile(r"[฀-๿]")
+# meta description / og:description - คำโปรยของหน้า ใช้ช่วย Gemini ตัดสินว่า "เว็บขึ้นจริง" ไหม
+RE_DESC = re.compile(rb"name=[\"']description[\"'][^>]*content=[\"']([^\"']{0,300})", re.I)
+RE_OGDESC = re.compile(rb"og:description[\"'][^>]*content=[\"']([^\"']{0,300})", re.I)
 
 _NOVERIFY = ssl.create_default_context()
 _NOVERIFY.check_hostname = False
@@ -399,7 +402,7 @@ def probe_site(dom):
         # เว็บล่มชั่วคราวหรือเน็ตสะดุด ไม่ควรถูกตราหน้าว่าเปิดไม่ได้ตลอดไป
         if not hit.get("err") or time.time() - hit.get("_at", 0) < 900:
             return dict(hit, d=dom)
-    out = {"d": dom, "lang": "", "th": False, "title": "", "err": ""}
+    out = {"d": dom, "lang": "", "th": False, "title": "", "desc": "", "err": ""}
     for scheme in ("https://", "http://"):
         try:
             st, raw, final = _get(scheme + host)
@@ -416,7 +419,14 @@ def probe_site(dom):
         if mt:
             try:
                 out["title"] = re.sub(r"\s+", " ", mt.group(1).decode(
-                    "utf-8", "ignore")).strip()[:90]
+                    "utf-8", "ignore")).strip()[:120]
+            except Exception:
+                pass
+        md = RE_DESC.search(raw) or RE_OGDESC.search(raw)
+        if md:
+            try:
+                out["desc"] = re.sub(r"\s+", " ", md.group(1).decode(
+                    "utf-8", "ignore")).strip()[:200]
             except Exception:
                 pass
         body = raw.decode("utf-8", "ignore")
@@ -913,16 +923,18 @@ PROMPT = """คุณคือตัวคัดกรองชื่อโด�
 ต้องมีครบทุกโดเมนที่ให้มา"""
 
 
-LIVE_PROMPT = """คุณดู "title ของหน้าเว็บ" (ต่อท้ายชื่อโดเมน คั่นด้วย tab) เพื่อบอกว่า
-เว็บนั้นเป็นเว็บพนันออนไลน์ที่ "เปิดให้บริการจริงแล้ว" หรือยัง — ดู title เป็นหลัก ไม่ใช่ชื่อโดเมน
+LIVE_PROMPT = """แต่ละบรรทัดคือ 1 เว็บ รูปแบบ: โดเมน<TAB>title<TAB>description (description อาจว่าง)
+อ่าน title + description บอกว่าเว็บนั้นเป็นเว็บพนันออนไลน์ที่ "เปิดให้บริการจริงแล้ว" หรือยัง
+ดูเนื้อหาใน title/description เป็นหลัก ไม่ใช่ชื่อโดเมน
 
-live = yes  ต่อเมื่อ title สื่อว่าเป็นเว็บพนัน/คาสิโน/สล็อต/แทงบอล/หวย ที่เปิดจริง เช่น
-            "สมัครสมาชิก UFABET", "PGSLOT เว็บตรง", "เว็บสล็อตออนไลน์อันดับ 1",
-            "ทางเข้าเล่น", "ฝากถอนออโต้", ชื่อแบรนด์พนัน + คำชวนเล่น
-live = no   ถ้า title เป็นหน้า parking / ประกาศขายโดเมน (for sale) / coming soon /
-            under construction / ว่างเปล่า / เป็นแค่ชื่อโดเมน / หน้า default ของโฮสต์ /
-            ไม่เกี่ยวกับพนัน / ดูไม่ออกว่าเป็นพนัน
-ถ้า title ว่างหรือไม่มี ให้ตอบ no
+live = yes ถ้า title/description สื่อชัดว่าเป็นเว็บพนัน/คาสิโน/สล็อต/แทงบอล/หวย ที่ทำเสร็จเปิดจริง
+  สัญญาณ: มีคำโปรย/บริการ เช่น "ศูนย์รวมสล็อต", "คาสิโนออนไลน์", "สมัครสมาชิก", "เว็บตรง",
+  "ฝากถอนออโต้", "ทางเข้าเล่น", "อันดับ 1", "เว็บพนันออนไลน์"
+  ⭐ แม้เนื้อหาในหน้าจะน้อย แต่ถ้า title/description บอกชัดว่าเป็นเว็บพนันที่เปิดแล้ว = yes
+     (เว็บ JS จำนวนมากมีข้อความไทยในหน้าน้อย แต่ title โปรยชัด)
+live = no ถ้าเป็น: parking / ประกาศขายโดเมน (for sale) / coming soon / under construction /
+  หน้า default ของโฮสต์ / ไม่เกี่ยวกับพนัน / title ว่างหรือเป็นแค่ชื่อโดเมน-แบรนด์ลอย ๆ ไม่มีคำโปรย
+  ดูไม่ออกว่าเปิดจริง ให้ตอบ no
 
 ตอบ JSON array เท่านั้น ไม่ต้องมีข้อความอื่น:
 [{"d":"ชื่อโดเมน","live":"yes|no","w":"เหตุผลสั้นไม่เกิน 8 คำ"}]
@@ -982,9 +994,10 @@ def live_check(items):
         if isinstance(it, dict):
             d = str(it.get("d", ""))[:120]
             t = str(it.get("title", ""))[:200]
+            ds = str(it.get("desc", ""))[:200]
         else:
-            d, t = str(it)[:120], ""
-        lines.append(d + "\t" + t)
+            d, t, ds = str(it)[:120], "", ""
+        lines.append(d + "\t" + t + "\t" + ds)
     res = _ask_model(LIVE_PROMPT, chr(10).join(lines))
     if "error" in res:
         return res
