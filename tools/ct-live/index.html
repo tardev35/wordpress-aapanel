@@ -814,27 +814,48 @@ function checkLive(rows){
       if(res&&res.error) return 0;
       var by={}; ((res&&res.rows)||[]).forEach(function(x){by[x.d]=x});
       need.forEach(function(r){ var x=by[r.d];
-        if(x) r.live=(String(x.live).toLowerCase()==="yes"); });
+        r.live = x ? (String(x.live).toLowerCase()==="yes") : false; });  // ตอบไม่มา = ถือว่ายังไม่ขึ้น กันวนซ้ำ
       aiDraw(); saveHits(need);   // เก็บสถานะ live ลง log ด้วย
       return need.length;
     }).catch(function(){return 0;});
 }
-// เปิดแท็บ "ขึ้นเว็บแล้ว": เปิดหน้าเว็บให้ตัวรวมไทยที่ยังไม่เปิด (จะได้มี title) แล้วให้ Gemini อ่าน
+// ให้ Gemini อ่าน title ของ "ทุกตัว" ที่เนื้อหาถึงเกณฑ์ ไล่ทีละ 60 จนหมด (ไม่ใช่แค่ batch เดียว)
+function checkLiveAll(){
+  return checkLive(ai).then(function(n){ return n>=60 ? checkLiveAll() : n; });
+}
+// เปิดแท็บ "ขึ้นเว็บแล้ว": เปิดหน้าเว็บให้ตัวรวมไทย "ทั้งหมด" ที่ยังไม่เปิด (ทีละ 24 จนครบ)
+// แล้วให้ Gemini อ่าน title — ทุกโดเมนต้องถูกเปิด+เช็คจึงจัดหมวดถูก ไม่ใช่แค่ 24 ตัวแรก
+var liveBusy=false;
 function ensureLive(){
-  var noProbe=ai.filter(function(r){return aiMatch(r,"th") && !r.p})
-               .map(function(r){return r.d}).slice(0,24);
-  if(!noProbe.length){ checkLive(ai); return; }
-  $("#aiDot").className="live"; $("#aiTxt").textContent="เปิด "+noProbe.length+" เว็บเพื่ออ่าน title...";
-  fetch("/api/probe",{method:"POST",headers:{"Content-Type":"application/json"},
-                      body:JSON.stringify(noProbe)})
-    .then(function(r){return r.json()}).then(function(res){
+  if(liveBusy) return;                                   // กันรันซ้อนตอนกดสลับแท็บรัว ๆ
+  if(!ai.some(function(r){return aiMatch(r,"th") && !r.p})){ checkLiveAll(); return; }
+  liveBusy=true;
+  (function step(){
+    var left=ai.filter(function(r){return aiMatch(r,"th") && !r.p}).map(function(r){return r.d});
+    if(!left.length){                                    // เปิดครบแล้ว -> อ่าน title ที่เหลือให้หมด
       $("#aiDot").className="live off";
-      var by={}; (res.rows||[]).forEach(function(x){by[x.d]=x});
-      probed=Object.assign(probed,by);
-      ai.forEach(function(r){ var x=by[r.d]; if(x)
-        r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||"",parked:x.parked||""}; });
-      aiDraw(); checkLive(ai);
-    }).catch(function(){ $("#aiDot").className="live off"; });
+      checkLiveAll().then(function(){ liveBusy=false;
+        $("#aiTxt").textContent="เช็ค “ขึ้นเว็บแล้ว” ครบทุกโดเมนแล้ว"; });
+      return;
+    }
+    var batch=left.slice(0,24);
+    $("#aiDot").className="live";
+    $("#aiTxt").textContent="เปิดหน้าอ่าน title... (เหลือ "+left.length+" ตัว)";
+    fetch("/api/probe",{method:"POST",headers:{"Content-Type":"application/json"},
+                        body:JSON.stringify(batch)})
+      .then(function(r){return r.json()}).then(function(res){
+        var by={}; (res.rows||[]).forEach(function(x){by[x.d]=x});
+        probed=Object.assign(probed,by);
+        ai.forEach(function(r){ var x=by[r.d]; if(x)
+          r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||"",parked:x.parked||""}; });
+        // กันวนไม่จบ: ตัวใน batch ที่ไม่มีผลกลับมา ให้ทำเป็น "เปิดไม่ได้" จะได้ไม่ถูกหยิบซ้ำ
+        batch.forEach(function(d){ if(!by[d]) ai.forEach(function(r){
+          if(r.d===d && !r.p) r.p={ok:false,th:false,lang:"",chars:0,title:"",parked:""}; }); });
+        aiDraw();
+        checkLive(ai).then(function(){ setTimeout(step, 300); });   // เช็ค live batch นี้ แล้วลุย batch ถัดไป
+      }).catch(function(){ liveBusy=false; $("#aiDot").className="live off";
+                           $("#aiTxt").textContent="เปิดหน้าเว็บไม่สำเร็จ (ลองใหม่รอบหน้า)"; });
+  })();
 }
 
 // เก็บ log ลง SQLite ฝั่ง server - รีเฟรชไม่หาย ข้ามเครื่องได้ เก็บหมุน 3 วัน
