@@ -132,6 +132,9 @@ a.ct:hover{color:var(--alert)}
 .warn{background:var(--amber-soft);border:1px solid var(--amber);border-radius:9px;
   padding:14px 16px;font-size:14px;margin-bottom:18px}
 .warn b{color:var(--amber)}
+.fresh{background:var(--alert-soft);border:1px solid var(--alert);border-radius:9px;
+  padding:12px 16px;font-size:14px;margin-bottom:14px;color:var(--alert)}
+.fresh b{color:var(--alert)}
 pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px 16px;
   overflow-x:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.8;margin:0 0 16px}
 .page{display:none} .page.on{display:block}
@@ -189,6 +192,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         — ส่งไปแค่ชื่อ ไม่ได้เปิดเว็บ ไม่ได้ส่งข้อมูลอื่น</p>
 
       <div class="warn" id="aiWarn" hidden></div>
+      <div class="fresh" id="freshBar" hidden></div>
 
       <div class="bar">
         <button class="go" id="btnAi">หาเว็บพนันไทย</button>
@@ -403,11 +407,14 @@ function fetchOnce(){
       var d=r.d.toLowerCase().replace(/^\*\./,"");
       r.mine = mine.some(function(m){return d===m || d.endsWith("."+m)});
       r._n=true;
+      // กรองด้วยชื่อทันทีทุกใบที่ไหลผ่าน แล้วเข้าคิวรอคัด — จะได้ไม่พลาดตัวที่ไหลออกบัฟเฟอร์ 900
+      if(thHint(r.u||r.d) && !candSeen[r.d]){ candSeen[r.d]=1; candTotal++; candQ.push(r.d); }
     });
+    if(candQ.length>5000) candQ=candQ.slice(-5000);   // คิวยาวเกินตัดหัวเก่าทิ้ง
     totalSeen += nw.length;                 // สะสมต่อ ไม่ตันที่ 900
     rows=nw.concat(rows).slice(0,900);      // บัฟเฟอร์โชว์เก็บ 900 ล่าสุดพอ
     drawTabs(); render(); drawCov();
-    if(aiAuto && nw.length) pipeline();
+    if(aiAuto && candQ.length) pipeline();
   }).catch(function(){});
 }
 
@@ -510,6 +517,8 @@ function isTh(r){
 
 /* ---------------- คัดกรองด้วย AI ---------------- */
 var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false, probed={}, aiNote="";
+// คิวโดเมนที่ "ชื่อเข้าเค้า" รอคัดกรอง — สะสมจากทั้งสตรีม ไม่ใช่แค่บัฟเฟอร์ 900 บนจอ
+var candQ=[], candSeen={}, candTotal=0;
 
 function aiDraw(){
   // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
@@ -577,18 +586,19 @@ function pipeline(){
   if(aiBusy) return;
   var cand=[], seen={};
   ai.forEach(function(r){seen[r.d]=1});
-  rows.forEach(function(r){
-    if(seen[r.d]) return;
-    if(!thHint(r.u||r.d)) return;             // ขั้น 1 - ชื่อไม่เข้าเค้าก็ไม่ต้องเปิด
-    seen[r.d]=1; cand.push(r.d);
-  });
+  // ดึงจากคิวที่ชื่อเข้าเค้า (สะสมจากทั้งสตรีม) ไม่ใช่แค่บัฟเฟอร์ 900 บนจอ
+  while(candQ.length && cand.length<150){
+    var cd=candQ.shift();
+    if(seen[cd]) continue;
+    seen[cd]=1; cand.push(cd);
+  }
   if(!cand.length){
     aiRan=true; aiBusy=false;
-    aiNote="ดู "+rows.length+" โดเมนในสตรีมแล้ว <b>ไม่มีตัวไหนชื่อเข้าเค้าเว็บพนันไทย</b><br>"+
-           "ด่านแรกกรองด้วยชื่อ ถ้าไม่ผ่านก็ไม่เปิดเว็บ จะได้ไม่เสียเวลา — ดึงต่อไปเรื่อย ๆ";
-    $("#aiTxt").textContent="ไม่มีโดเมนใหม่ที่เข้าเค้า"; aiDraw(); return;
+    aiNote="กรองชื่อจาก "+totalSeen.toLocaleString()+" โดเมนที่ไหลผ่านแล้ว <b>คิวรอคัดหมด</b><br>"+
+           "เข้าเค้าชื่อสะสม "+candTotal.toLocaleString()+" ตัว คัดไปหมดแล้ว — "+
+           "ดึงต่อไปเรื่อย ๆ ตัวใหม่จะเข้าคิวมาเอง (ติ๊ก “ทำอัตโนมัติทุกรอบที่ดึง” แล้วปล่อยไว้)";
+    $("#aiTxt").textContent="คิวหมด · เข้าเค้าชื่อสะสม "+candTotal.toLocaleString(); aiDraw(); return;
   }
-  cand=cand.slice(0,150);
   aiBusy=true;
   $("#aiDot").className="live";
   $("#aiTxt").textContent="ขั้น 2/3 เปิด "+cand.length+" เว็บดูภาษา...";
@@ -605,8 +615,11 @@ function pipeline(){
                " แต่<b>ไม่มีหน้าไหนเป็นภาษาไทย</b> จึงไม่ได้ส่งต่อให้ AI<br>"+
                "เว็บพนันไทยเป็นส่วนน้อยมากในสตรีมรวมทั้งโลก รอบเดียวไม่เจอเป็นเรื่องปกติ — "+
                "ติ๊ก “ทำอัตโนมัติทุกรอบที่ดึง” แล้วปล่อยไว้จะได้ผลดีกว่านั่งกด";
-        $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไม่เจอหน้าภาษาไทย";
-        aiDraw(); return;
+        $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไม่เจอไทย · เข้าเค้าชื่อสะสม "+
+          candTotal.toLocaleString()+" · รอคิวอีก "+candQ.length.toLocaleString();
+        aiDraw();
+        if(aiAuto && candQ.length) setTimeout(pipeline, 300);   // ยังมีในคิว ลุยต่อ
+        return;
       }
       $("#aiTxt").textContent="ขั้น 3/3 เจอหน้าไทย "+thai.length+" ให้ AI ตัดสินว่าพนันไหม...";
       return fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -616,7 +629,7 @@ function pipeline(){
           if(c.error){ $("#aiWarn").hidden=false;
                        $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(c.error); return; }
           aiRan=true; aiNote=""; $("#aiWarn").hidden=true;
-          var have={}; ai.forEach(function(o){have[o.d]=1});
+          var have={}, newHits=[]; ai.forEach(function(o){have[o.d]=1});
           (c.rows||[]).forEach(function(r){
             if(!r||!r.d||have[r.d]) return;      // กันชื่อซ้ำ
             have[r.d]=1;
@@ -625,11 +638,14 @@ function pipeline(){
             var x=probed[r.d];
             if(x) r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||""};
             ai.unshift(r);
+            if(r.v!=="no" && isTh(r)) newHits.push(r);   // ยืนยันว่าไทย+พนัน = ของใหม่ที่ต้องเตือน
           });
           ai=ai.slice(0,1000);
-          $("#aiTxt").textContent="เสร็จ · เปิด "+cand.length+" เว็บ เป็นไทย "+thai.length+
-            " · token เข้า "+(c["in"]||"?");
+          $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไทย "+thai.length+
+            " · เข้าเค้าชื่อสะสม "+candTotal.toLocaleString()+" · รอคิวอีก "+candQ.length.toLocaleString();
           aiDraw();
+          if(newHits.length) alertNewHits(newHits);   // เช็ควันจดอัตโนมัติ + เตือน + เก็บ log
+          if(aiAuto && candQ.length) setTimeout(pipeline, 300);   // ยังมีในคิว ลุยต่อ
         });
     })
     .catch(function(){ aiBusy=false; $("#aiDot").className="live off"; $("#aiTxt").textContent="ทำไม่สำเร็จ"; });
@@ -696,6 +712,63 @@ $("#btnProbe").addEventListener("click",function(){
 });
 $("#aiAuto").addEventListener("change",function(){aiAuto=this.checked});
 
+/* ---------------- ระบบเตือนภัย: เช็ควันจดอัตโนมัติ + เด้งเตือน + เก็บ log ถาวร ----------------
+   จุดขายของการเฝ้าสตรีมสดคือ "จับคู่แข่งตอนเพิ่งจด" วันจดจึงเป็นสัญญาณสำคัญที่สุด */
+function alertNewHits(hits){
+  var need=hits.filter(function(r){return !r.a}).map(function(r){return r.d});
+  if(!need.length){ hits.forEach(notifyFresh); saveHits(hits); return; }
+  fetch("/api/age",{method:"POST",headers:{"Content-Type":"application/json"},
+                    body:JSON.stringify(need.slice(0,60))})
+    .then(function(r){return r.json()}).then(function(res){
+      var by={}; (res.rows||[]).forEach(function(x){by[x.d]=x});
+      hits.forEach(function(r){
+        var x=by[r.d]; if(!x) return;
+        r.a={th:x.th||"",days:(x.days===undefined?null:x.days),err:x.err||"",via:x.via||"rdap"};
+      });
+      hits.forEach(notifyFresh);
+      aiDraw(); saveHits(hits);
+    }).catch(function(){ saveHits(hits); });
+}
+
+function notifyFresh(r){
+  // เด้งเตือนเฉพาะตัวที่ "เพิ่งจด ≤14 วัน" และโมเดลว่า yes = คู่แข่งที่เพิ่งเกิดจริง ๆ
+  var days = r.a ? r.a.days : null;
+  if(r.v==="yes" && days!==null && days<=14 && !r._notified){
+    r._notified=true;
+    var msg="เพิ่งจด "+days+" วัน — "+r.d;
+    try{ if(window.Notification && Notification.permission==="granted")
+      new Notification("🔔 เจอเว็บพนันไทยใหม่", {body:msg}); }catch(e){}
+    var b=$("#freshBar");
+    if(b){ b.hidden=false; b.innerHTML="🔔 <b>เจอเว็บพนันไทยเพิ่งจด "+days+" วัน:</b> "+esc(r.d); }
+  }
+}
+
+// เก็บ log ลง SQLite ฝั่ง server - รีเฟรชไม่หาย ข้ามเครื่องได้ เก็บหมุน 3 วัน
+function saveHits(hits){
+  var payload=(hits||[]).filter(function(r){return r&&r.d}).map(function(r){
+    return {d:r.d, v:r.v, m:r.m||"", w:r.w||"",
+            lang:(r.p?r.p.lang:""), chars:(r.p?r.p.chars:0), title:(r.p?r.p.title:""),
+            th:(r.a?r.a.th:""), days:(r.a?r.a.days:null), via:(r.a?r.a.via:"")};
+  });
+  if(!payload.length) return;
+  fetch("/api/hit",{method:"POST",headers:{"Content-Type":"application/json"},
+                    body:JSON.stringify(payload)}).catch(function(){});
+}
+// กู้ log จาก server ตอนเปิดหน้า - ของที่เจอไว้ 3 วันล่าสุดยังอยู่
+function loadHits(){
+  fetch("/api/hits").then(function(r){return r.json()}).then(function(res){
+    var have={}; ai.forEach(function(o){have[o.d]=1});
+    (res.rows||[]).forEach(function(h){
+      if(!h.d||have[h.d]) return; have[h.d]=1;
+      ai.push({d:h.d, v:h.v||"no", m:h.m||"", w:h.w||"",
+        p:{ok:true, th:true, lang:h.lang||"", chars:h.chars||0, title:h.title||""},
+        a:{th:h.th||"", days:(h.age_days===null?null:h.age_days), via:h.via||"", err:""},
+        _n:false, _notified:true});   // ของเก่า ไม่เด้งเตือนซ้ำ
+    });
+    if((res.rows||[]).length){ aiRan=true; aiDraw(); }
+  }).catch(function(){});
+}
+
 // วันจดโดเมนมาจาก RDAP ของทะเบียนโดยตรง ไม่ใช่การเดา
 // โดเมนที่จดมาไม่กี่วันคือกลุ่มที่บอทเล็งที่สุด - bbc29pro.com โดนแฮ็กตอนอายุ 6 วัน
 $("#btnAge").addEventListener("click",function(){
@@ -729,6 +802,13 @@ fetch("/api/ai-status").then(function(r){return r.json()}).then(function(s){
 
 // โดเมนของเราเอง - แก้รายชื่อตรงนี้ได้ หรือปล่อยว่างถ้าไม่ต้องใช้
 mine=["bbc29pro.com","neda88-pro.com"];
+
+// ---- ระบบเตือนภัย: เปิดคัดกรองอัตโนมัติเป็นค่าเริ่มต้น + ขอสิทธิ์เด้งเตือน + กู้ log เดิม ----
+aiAuto=true;
+if($("#aiAuto")) $("#aiAuto").checked=true;
+try{ if(window.Notification && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
+loadHits();
+aiDraw();
 
 loadLogs();
 </script>

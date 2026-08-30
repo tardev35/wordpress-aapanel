@@ -2,4 +2,7 @@
 # commit เฉพาะรูปแบบที่ถอดได้ (vocab.json) ไม่ commit ตัวรายชื่อ
 *.txt
 *.csv
+*.db
+*.db-journal
+*.db-wal
 !README.md

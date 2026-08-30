@@ -20,6 +20,7 @@ import gzip
 import json
 import re
 import socket
+import sqlite3
 import struct
 import sys
 import threading
@@ -66,6 +67,68 @@ def load_env():
 
 
 ENV = load_env()
+
+# ---------------------------------------------------------------- ฐานข้อมูล SQLite
+# เก็บ log เว็บพนันไทยที่เจอ แบบหมุน 3 วัน (วันนี้ + 2 วันก่อน) เกินนั้นลบทิ้ง
+# เช่น วันนี้ 30 ส.ค. -> พอถึง 2 ก.ย. ของวันที่ 30 จะถูกลบ
+DB_PATH = HERE / "data" / "hits.db"
+_db_lock = threading.Lock()
+
+
+def _db():
+    (HERE / "data").mkdir(exist_ok=True)
+    con = sqlite3.connect(str(DB_PATH), timeout=10)
+    con.execute("""CREATE TABLE IF NOT EXISTS hits(
+        d TEXT PRIMARY KEY, v TEXT, m TEXT, w TEXT,
+        lang TEXT, chars INTEGER, title TEXT,
+        th TEXT, age_days INTEGER, via TEXT,
+        first_seen INTEGER, day TEXT)""")
+    return con
+
+
+def _db_purge(con):
+    # เก็บ 3 วันปฏิทินล่าสุด ลบของที่เก่ากว่านั้น
+    con.execute("DELETE FROM hits WHERE day <= date('now','localtime','-3 days')")
+
+
+def db_add(rows):
+    with _db_lock:
+        con = _db()
+        now = int(time.time())
+        today = datetime.now().strftime("%Y-%m-%d")
+        for r in rows:
+            d = str(r.get("d", "")).strip().lower()
+            if not d:
+                continue
+            con.execute(
+                """INSERT INTO hits
+                   (d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(d) DO UPDATE SET
+                     v=excluded.v, m=excluded.m, w=excluded.w,
+                     th=excluded.th, age_days=excluded.age_days, via=excluded.via""",
+                (d, r.get("v", ""), r.get("m", ""), r.get("w", ""),
+                 r.get("lang", ""), int(r.get("chars") or 0), r.get("title", ""),
+                 r.get("th", ""), r.get("days"), r.get("via", ""), now, today))
+        _db_purge(con)
+        con.commit()
+        n = con.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
+        con.close()
+        return n
+
+
+def db_recent(limit=2000):
+    with _db_lock:
+        con = _db()
+        _db_purge(con)
+        con.commit()
+        cur = con.execute(
+            "SELECT d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day "
+            "FROM hits ORDER BY first_seen DESC LIMIT ?", (limit,))
+        cols = [c[0] for c in cur.description]
+        out = [dict(zip(cols, row)) for row in cur.fetchall()]
+        con.close()
+        return out
 _proxies = []          # เติมจริงตอน main() หลังนิยาม load_proxies
 _logs_cache = {"at": 0.0, "logs": []}
 _seen = set()          # กันไม่ให้โดเมนเดิมโผล่ซ้ำเวลา log ยังไม่ขยับ
@@ -884,6 +947,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(coverage(), ensure_ascii=False).encode())
 
+        elif self.path == "/api/hits":
+            try:
+                rows = db_recent()
+            except Exception as ex:
+                rows = []
+                print("db_recent error:", ex)
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps({"rows": rows}, ensure_ascii=False).encode())
+
         elif self.path == "/api/vocab":
             # คำที่ถอดจากโดเมนจริงด้วย tune.py - ไม่มีไฟล์ก็ใช้กฎโครงสร้างอย่างเดียว
             # vocab.json = ตัวเต็ม มีชื่อแบรนด์ อยู่แค่ในเครื่อง
@@ -903,7 +975,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"not found")
 
     def do_POST(self):
-        if self.path not in ("/api/classify", "/api/probe", "/api/age"):
+        if self.path not in ("/api/classify", "/api/probe", "/api/age", "/api/hit"):
             self._send(404, "text/plain; charset=utf-8", b"not found")
             return
         n = int(self.headers.get("Content-Length", 0))
@@ -912,6 +984,17 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self._send(400, "application/json; charset=utf-8",
                        json.dumps({"error": "payload ไม่ถูกต้อง"}, ensure_ascii=False).encode())
+            return
+        if self.path == "/api/hit":
+            # doms ในที่นี้คือลิสต์ของ object ผลคัดกรอง ไม่ใช่ชื่อโดเมน
+            try:
+                total = db_add([r for r in doms if isinstance(r, dict)])
+            except Exception as ex:
+                self._send(500, "application/json; charset=utf-8",
+                           json.dumps({"error": str(ex)}).encode())
+                return
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps({"ok": True, "total": total}).encode())
             return
         if self.path == "/api/age":
             rows = ages_many([str(d)[:120] for d in doms if d][:60])
