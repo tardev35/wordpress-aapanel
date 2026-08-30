@@ -82,11 +82,13 @@ def _db():
         d TEXT PRIMARY KEY, v TEXT, m TEXT, w TEXT,
         lang TEXT, chars INTEGER, title TEXT,
         th TEXT, age_days INTEGER, via TEXT,
-        first_seen INTEGER, day TEXT, parked TEXT DEFAULT '')""")
-    # เพิ่มคอลัมน์ parked ให้ DB เก่าที่สร้างก่อนมีฟีเจอร์นี้
+        first_seen INTEGER, day TEXT, parked TEXT DEFAULT '', live TEXT DEFAULT '')""")
+    # เพิ่มคอลัมน์ที่ยังไม่มีให้ DB เก่าที่สร้างก่อนมีฟีเจอร์นี้
     have = [c[1] for c in con.execute("PRAGMA table_info(hits)")]
     if "parked" not in have:
         con.execute("ALTER TABLE hits ADD COLUMN parked TEXT DEFAULT ''")
+    if "live" not in have:
+        con.execute("ALTER TABLE hits ADD COLUMN live TEXT DEFAULT ''")
     return con
 
 
@@ -123,17 +125,17 @@ def db_add(rows):
                 continue                   # ไม่ใช่โดเมน -> ข้าม (ไม่ให้ลง PRIMARY KEY)
             con.execute(
                 """INSERT INTO hits
-                   (d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day,parked)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   (d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day,parked,live)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(d) DO UPDATE SET
                      v=excluded.v, m=excluded.m, w=excluded.w,
                      th=excluded.th, age_days=excluded.age_days, via=excluded.via,
-                     parked=excluded.parked""",
+                     parked=excluded.parked, live=excluded.live""",
                 (d, _clip(r.get("v"), 8), _clip(r.get("m"), 300), _clip(r.get("w"), 120),
                  _clip(r.get("lang"), 40), _to_int(r.get("chars")) or 0,
                  _clip(r.get("title"), 300),
                  _clip(r.get("th"), 40), _to_int(r.get("days")), _clip(r.get("via"), 40),
-                 now, today, _clip(r.get("parked"), 40)))
+                 now, today, _clip(r.get("parked"), 40), _clip(r.get("live"), 8)))
         _db_purge(con)
         con.commit()
         n = con.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
@@ -147,7 +149,7 @@ def db_recent(limit=2000):
         _db_purge(con)
         con.commit()
         cur = con.execute(
-            "SELECT d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day,parked "
+            "SELECT d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day,parked,live "
             "FROM hits ORDER BY first_seen DESC LIMIT ?", (limit,))
         cols = [c[0] for c in cur.description]
         out = [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -911,15 +913,31 @@ PROMPT = """คุณคือตัวคัดกรองชื่อโด�
 ต้องมีครบทุกโดเมนที่ให้มา"""
 
 
-def classify(domains):
-    """ส่งชื่อโดเมนไปให้โมเดลคัดกรอง - ส่งไปแค่ "ชื่อ" ไม่ได้เปิดเว็บ ไม่ได้ส่งข้อมูลอื่น"""
+LIVE_PROMPT = """คุณดู "title ของหน้าเว็บ" (ต่อท้ายชื่อโดเมน คั่นด้วย tab) เพื่อบอกว่า
+เว็บนั้นเป็นเว็บพนันออนไลน์ที่ "เปิดให้บริการจริงแล้ว" หรือยัง — ดู title เป็นหลัก ไม่ใช่ชื่อโดเมน
+
+live = yes  ต่อเมื่อ title สื่อว่าเป็นเว็บพนัน/คาสิโน/สล็อต/แทงบอล/หวย ที่เปิดจริง เช่น
+            "สมัครสมาชิก UFABET", "PGSLOT เว็บตรง", "เว็บสล็อตออนไลน์อันดับ 1",
+            "ทางเข้าเล่น", "ฝากถอนออโต้", ชื่อแบรนด์พนัน + คำชวนเล่น
+live = no   ถ้า title เป็นหน้า parking / ประกาศขายโดเมน (for sale) / coming soon /
+            under construction / ว่างเปล่า / เป็นแค่ชื่อโดเมน / หน้า default ของโฮสต์ /
+            ไม่เกี่ยวกับพนัน / ดูไม่ออกว่าเป็นพนัน
+ถ้า title ว่างหรือไม่มี ให้ตอบ no
+
+ตอบ JSON array เท่านั้น ไม่ต้องมีข้อความอื่น:
+[{"d":"ชื่อโดเมน","live":"yes|no","w":"เหตุผลสั้นไม่เกิน 8 คำ"}]
+ต้องมีครบทุกโดเมนที่ให้มา"""
+
+
+def _ask_model(system, user_content):
+    """เรียกโมเดล 1 ครั้งด้วย system+user - คืน {'rows':...,'usage':...} หรือ {'error':...}"""
     if not ENV["key"]:
         return {"error": "ยังไม่ได้ตั้ง OPENROUTER_API_KEY - ดู tools/ct-live/.env"}
     body = json.dumps({
         "model": ENV["model"],
         "temperature": 0,
-        "messages": [{"role": "system", "content": PROMPT},
-                     {"role": "user", "content": chr(10).join(domains)}],
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user_content}],
     }).encode()
     req = urllib.request.Request(OR_URL, data=body, headers={
         "Authorization": "Bearer " + ENV["key"],
@@ -942,9 +960,37 @@ def classify(domains):
         rows = json.loads(m.group(0))
     except Exception:
         return {"error": "อ่าน JSON จากโมเดลไม่ได้", "raw": txt[:200]}
-    usage = out.get("usage", {})
     return {"rows": rows, "model": out.get("model", ENV["model"]),
-            "in": usage.get("prompt_tokens"), "out": usage.get("completion_tokens")}
+            "usage": out.get("usage", {})}
+
+
+def classify(domains):
+    """ส่งชื่อโดเมนไปให้โมเดลคัดกรอง - ส่งไปแค่ "ชื่อ" ไม่ได้เปิดเว็บ ไม่ได้ส่งข้อมูลอื่น"""
+    res = _ask_model(PROMPT, chr(10).join(str(d) for d in domains))
+    if "error" in res:
+        return res
+    u = res["usage"]
+    return {"rows": res["rows"], "model": res["model"],
+            "in": u.get("prompt_tokens"), "out": u.get("completion_tokens")}
+
+
+def live_check(items):
+    """อ่าน title ของหน้าเว็บ (ที่ probe มาแล้ว) บอกว่าเป็นเว็บพนันที่ 'เปิดจริง' หรือยัง
+    - items = [{"d":..,"title":..}] ส่งเฉพาะ title ไม่ได้เปิดเว็บซ้ำ"""
+    lines = []
+    for it in items:
+        if isinstance(it, dict):
+            d = str(it.get("d", ""))[:120]
+            t = str(it.get("title", ""))[:200]
+        else:
+            d, t = str(it)[:120], ""
+        lines.append(d + "\t" + t)
+    res = _ask_model(LIVE_PROMPT, chr(10).join(lines))
+    if "error" in res:
+        return res
+    u = res["usage"]
+    return {"rows": res["rows"], "model": res["model"],
+            "in": u.get("prompt_tokens"), "out": u.get("completion_tokens")}
 
 
 # ---------------------------------------------------------------- http
@@ -1032,7 +1078,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"not found")
 
     def do_POST(self):
-        if self.path not in ("/api/classify", "/api/probe", "/api/age", "/api/hit"):
+        if self.path not in ("/api/classify", "/api/probe", "/api/age", "/api/hit", "/api/live"):
             self._send(404, "text/plain; charset=utf-8", b"not found")
             return
         n = int(self.headers.get("Content-Length", 0))
@@ -1058,6 +1104,12 @@ class Handler(BaseHTTPRequestHandler):
             rows = ages_many([str(d)[:120] for d in doms if d][:60])
             self._send(200, "application/json; charset=utf-8",
                        json.dumps({"rows": rows}, ensure_ascii=False).encode())
+            return
+        if self.path == "/api/live":
+            # อ่าน title ที่ probe มาแล้ว บอกว่า "เปิดเว็บจริง" หรือยัง
+            res = live_check([r for r in doms if isinstance(r, dict)][:60])
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps(res, ensure_ascii=False).encode())
             return
         if self.path == "/api/probe":
             rows = probe_many([str(d)[:120] for d in doms if d][:150])
