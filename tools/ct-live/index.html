@@ -515,6 +515,18 @@ function isTh(r){
   return thHint(r.u||r.d);              // เดาจากชื่ออย่างเดียว อ่อนสุด
 }
 
+// "จดใหม่" = จดมาไม่เกินกี่วัน — กลุ่มที่บอทเล็งที่สุด (bbc29pro โดนตอนอายุ 6 วัน)
+var FRESH_DAYS=30;
+// ตัวกรองแท็บชุดเดียว ใช้ร่วมกันทั้งการนับ การแสดงผล และปุ่มเปิดเว็บ/เช็ควันจด
+function aiMatch(r,t){
+  if(t==="all")   return true;
+  if(t==="th")    return r.v!=="no" && isTh(r);                        // รวมไทย: พนัน + เป็นไทย
+  if(t==="fresh") return r.v!=="no" && isTh(r) &&
+                         r.a && r.a.days!==null && r.a.days<=FRESH_DAYS;  // จดใหม่
+  if(t==="live")  return r.v!=="no" && r.p && r.p.ok && r.p.th;        // ขึ้นเว็บแล้ว: เปิดหน้าได้จริง + lang th
+  return r.v===t;                                                      // yes / maybe / no
+}
+
 /* ---------------- คัดกรองด้วย AI ---------------- */
 var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false, probed={}, aiNote="";
 // คิวโดเมนที่ "ชื่อเข้าเค้า" รอคัดกรอง — สะสมจากทั้งสตรีม ไม่ใช่แค่บัฟเฟอร์ 900 บนจอ
@@ -523,13 +535,16 @@ var candQ=[], candSeen={}, candTotal=0;
 function aiDraw(){
   // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
   var box=$("#aiRows"), keepTop=box.scrollTop, keepH=box.scrollHeight;
-  var c={yes:0,maybe:0,no:0,th:0};
+  var c={yes:0,maybe:0,no:0,th:0,fresh:0,live:0};
   ai.forEach(function(r){
     c[r.v]=(c[r.v]||0)+1;
-    if(r.v!=="no" && isTh(r)) c.th++;
+    if(aiMatch(r,"th"))    c.th++;
+    if(aiMatch(r,"fresh")) c.fresh++;
+    if(aiMatch(r,"live"))  c.live++;
   });
   $("#navAiC").textContent = aiRan ? c.th : "–";
-  $("#aiTabs").innerHTML=[["th","ไทย"],["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
+  $("#aiTabs").innerHTML=[["th","รวมไทย"],["fresh","จดใหม่"],["live","ขึ้นเว็บแล้ว"],
+                          ["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
     .map(function(x){
       var n = x[0]==="all" ? ai.length : (c[x[0]]||0);
       return '<button class="tab'+(aiTab===x[0]?" on":"")+'" data-a="'+x[0]+'">'+x[1]+'<span class="c">'+n+'</span></button>';
@@ -537,11 +552,7 @@ function aiDraw(){
   $("#aiTabs").querySelectorAll(".tab").forEach(function(b){
     b.addEventListener("click",function(){aiTab=b.dataset.a;aiDraw()});
   });
-  var list=ai.filter(function(r){
-    if(aiTab==="all") return true;
-    if(aiTab==="th")  return r.v!=="no" && isTh(r);
-    return r.v===aiTab;
-  });
+  var list=ai.filter(function(r){return aiMatch(r,aiTab)});
   if(!list.length){
     aiRows(box, keepTop, keepH, '<div class="empty">'+
       (!ai.length ? (aiNote ? aiNote
@@ -549,6 +560,10 @@ function aiDraw(){
                              : "ยังไม่ได้คัดกรอง — กด “หาเว็บพนันไทย”")
        : aiTab==="th" ? "คัดกรองไปแล้ว "+ai.length+" โดเมน <b>ยังไม่เจอของตลาดไทย</b><br>"+
            "เว็บพนันไทยเป็นส่วนน้อยมากในสตรีมรวมทั้งโลก — ดึงต่อไปเรื่อย ๆ หรือดูแท็บอื่นก่อน"
+       : aiTab==="fresh" ? "ยังไม่มีตัวไทยที่ <b>จดใหม่ ≤"+FRESH_DAYS+" วัน</b><br>"+
+           "วันจดมาจากปุ่ม “เช็ควันจดโดเมน” — กดเพื่อดึงวันจดเพิ่มก่อน"
+       : aiTab==="live" ? "ยังไม่มีตัวไทยที่ <b>ขึ้นเว็บแล้ว</b> (เปิดหน้าได้จริง + เป็นไทย)<br>"+
+           "กด “เปิดดูหน้าเว็บจริง” เพื่อตรวจว่าเว็บขึ้นหรือยัง"
        : "ไม่มีรายการในกลุ่มนี้")+'</div>');
     return;
   }
@@ -689,7 +704,7 @@ $("#btnAiClear").addEventListener("click",function(){ai=[];aiDraw()});
 // เดาจากชื่อได้แค่ไหนก็เดา สู้เปิดหน้าเว็บอ่าน <html lang="..."> ไม่ได้
 // เปิดจากเครื่องเรา เว็บปลายทางจะเห็น IP เรา - ทำทีละ 24 ตัว ไม่ยิงรัว
 $("#btnProbe").addEventListener("click",function(){
-  var list=ai.filter(function(r){return aiTab==="all"||(aiTab==="th"?r.v!=="no"&&isTh(r):r.v===aiTab)})
+  var list=ai.filter(function(r){return aiMatch(r,aiTab)})
              .filter(function(r){return !r.p}).slice(0,24);
   if(!list.length){ $("#aiTxt").textContent="ไม่มีตัวที่ยังไม่ได้เปิดดู"; return; }
   $("#aiDot").className="live"; $("#aiTxt").textContent="กำลังเปิด "+list.length+" เว็บ...";
@@ -772,7 +787,7 @@ function loadHits(){
 // วันจดโดเมนมาจาก RDAP ของทะเบียนโดยตรง ไม่ใช่การเดา
 // โดเมนที่จดมาไม่กี่วันคือกลุ่มที่บอทเล็งที่สุด - bbc29pro.com โดนแฮ็กตอนอายุ 6 วัน
 $("#btnAge").addEventListener("click",function(){
-  var list=ai.filter(function(r){return aiTab==="all"||(aiTab==="th"?r.v!=="no"&&isTh(r):r.v===aiTab)})
+  var list=ai.filter(function(r){return aiMatch(r,aiTab)})
              .filter(function(r){return !r.a}).slice(0,60);
   if(!list.length){ $("#aiTxt").textContent="เช็ควันจดครบแล้ว"; return; }
   $("#aiDot").className="live"; $("#aiTxt").textContent="เช็ควันจด "+list.length+" โดเมน...";

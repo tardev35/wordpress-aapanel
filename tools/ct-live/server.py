@@ -91,15 +91,32 @@ def _db_purge(con):
     con.execute("DELETE FROM hits WHERE day <= date('now','localtime','-3 days')")
 
 
+# โดเมนต้องหน้าตาเป็นโดเมนจริง (ตัวอักษรโดเมนล้วน + มีจุด) กัน key ขยะลง DB ถาวร
+_DOM_RE = re.compile(r"^[a-z0-9._-]{1,120}$")
+
+
+def _clip(v, n=200):
+    return str(v if v is not None else "")[:n]
+
+
+def _to_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def db_add(rows):
     with _db_lock:
         con = _db()
         now = int(time.time())
         today = datetime.now().strftime("%Y-%m-%d")
-        for r in rows:
-            d = str(r.get("d", "")).strip().lower()
-            if not d:
+        for r in rows[:150]:               # จำกัดจำนวนต่อรอบ เท่า endpoint อื่น
+            if not isinstance(r, dict):
                 continue
+            d = str(r.get("d", "")).strip().lower()[:120]
+            if "." not in d or not _DOM_RE.match(d):
+                continue                   # ไม่ใช่โดเมน -> ข้าม (ไม่ให้ลง PRIMARY KEY)
             con.execute(
                 """INSERT INTO hits
                    (d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day)
@@ -107,9 +124,11 @@ def db_add(rows):
                    ON CONFLICT(d) DO UPDATE SET
                      v=excluded.v, m=excluded.m, w=excluded.w,
                      th=excluded.th, age_days=excluded.age_days, via=excluded.via""",
-                (d, r.get("v", ""), r.get("m", ""), r.get("w", ""),
-                 r.get("lang", ""), int(r.get("chars") or 0), r.get("title", ""),
-                 r.get("th", ""), r.get("days"), r.get("via", ""), now, today))
+                (d, _clip(r.get("v"), 8), _clip(r.get("m"), 300), _clip(r.get("w"), 120),
+                 _clip(r.get("lang"), 40), _to_int(r.get("chars")) or 0,
+                 _clip(r.get("title"), 300),
+                 _clip(r.get("th"), 40), _to_int(r.get("days")), _clip(r.get("via"), 40),
+                 now, today))
         _db_purge(con)
         con.commit()
         n = con.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
@@ -987,8 +1006,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/hit":
             # doms ในที่นี้คือลิสต์ของ object ผลคัดกรอง ไม่ใช่ชื่อโดเมน
+            # db_add กรอง/จำกัดขนาดเอง (ข้ามตัวที่ไม่ใช่ dict / ไม่ใช่โดเมน)
             try:
-                total = db_add([r for r in doms if isinstance(r, dict)])
+                total = db_add(doms if isinstance(doms, list) else [])
             except Exception as ex:
                 self._send(500, "application/json; charset=utf-8",
                            json.dumps({"error": str(ex)}).encode())
