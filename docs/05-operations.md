@@ -511,4 +511,43 @@ repo นี้คือ runbook นั้น **ต้องอัปเดตท
 
 ---
 
+## 5.8 หมุน log เว็บอัตโนมัติ (logrotate)
+
+aaPanel **ไม่ตั้ง logrotate ให้ `/www/wwwlogs` เอง** — log เว็บจึงโตไม่หยุด (เคยเจอก้อน 162 MB)
+ปุ่ม **Log cleanup** ในแผงล้างได้ แต่ต้องกดเอง ไม่มีตัวตั้งเวลา
+
+### 🔴 ทำไมไม่ล้างเกลี้ยงทุก 7 วัน
+
+เราใช้ access log **จับการโจมตี** (เคส xmlrpc ยิง bbc29pro ไล่เจอจาก log) ถ้าล้างหมดทุก 7 วัน
+โดนเจาะวันที่ 6 มาดูวันที่ 8 หลักฐานหายหมด จึงใช้ **logrotate หมุนสัปดาห์ละครั้ง เก็บ 2 สัปดาห์
+บีบอัด** แทน — คุมพื้นที่ได้เท่าการล้าง แต่ยังเหลือ log เก่าไว้สืบสวน
+
+### ติดตั้ง (ทำทุกเครื่อง)
+
+[`setup-logrotate.sh`](../scripts/setup-logrotate.sh) เป็นสคริปต์เดี่ยว ไม่อ่าน `configs/` จึง
+pipe ผ่าน `bash -s` ได้เลย ไม่ต้องอัป repo ขึ้นเครื่อง:
+
+```bash
+# ติดตั้ง + หมุนทันทีเพื่อคืนพื้นที่เลย
+ssh root@SERVER_IP "bash -s -- --rotate-now" < scripts/setup-logrotate.sh
+
+# ดูสถานะ / ถอดออก
+ssh root@SERVER_IP "bash -s -- --check"  < scripts/setup-logrotate.sh
+ssh root@SERVER_IP "bash -s -- --remove" < scripts/setup-logrotate.sh   # log เดิมไม่ลบ
+```
+
+วาง `/etc/logrotate.d/aapanel-wwwlogs` (`weekly` · `rotate 2` · `compress`) แล้ว logrotate ของ OS
+(รันทุกวันผ่าน `logrotate.timer`) จะหมุนเฉพาะตัวที่ครบ 7 วัน = **cleanup ทุก 7 วันอัตโนมัติ**
+
+- `postrotate` ส่ง `USR1` ให้ nginx เปิดไฟล์ log ใหม่ (จำเป็น ไม่งั้นเขียนลง inode เก่า ดิสก์ไม่ว่าง)
+- เก็บกี่สัปดาห์ปรับด้วย `KEEP=4 bash ...`
+- ถ้าเครื่องไม่มี `logrotate.timer`/`cron.daily/logrotate` สคริปต์ตั้ง cron สำรองให้ (อาทิตย์ 03:00)
+- ตรวจ syntax ด้วย `logrotate --debug` อัตโนมัติก่อนติดตั้ง ไม่ผ่านถอน config กลับให้
+
+> ✅ ติดตั้งครบทั้ง 4 เครื่องแล้ว (2026-08-30) — logrotate.timer ทำงานทุกเครื่อง
+> เครื่อง log ใหญ่คืนพื้นที่ทันที **167M → 62M** และ **148M → 95M** (log ยังอยู่ครบ ถูกบีบอัด)
+> ส่วนที่เหลือเป็น `.1` ที่ยังไม่บีบ (delaycompress) จะบีบ + ทยอยลบเองในรอบหมุนถัดไป
+
+---
+
 **ถัดไป:** [06-new-site.md](06-new-site.md)

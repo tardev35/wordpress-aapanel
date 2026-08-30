@@ -144,6 +144,9 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/verify-config.sh"
 
 # 10) ทดสอบว่ารูปิดจริง - ต้องได้ 404
 curl -sk --resolve nosuch.invalid:443:NEW_IP https://nosuch.invalid/ -o /dev/null -w "%{http_code}"
+
+# 11) หมุน log เว็บอัตโนมัติ (aaPanel ไม่ตั้งให้ log โตไม่หยุด) ดู 05 §5.8
+ssh root@NEW_IP "bash -s -- --rotate-now" < scripts/setup-logrotate.sh
 ```
 
 **ข้อ 5 ยังไม่จบ** — ไปตั้งงานใน **aaPanel → Cron Job → Add Task** ต่อ
