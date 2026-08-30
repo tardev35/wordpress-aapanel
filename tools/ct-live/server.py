@@ -215,14 +215,45 @@ _NOVERIFY.verify_mode = ssl.CERT_NONE
 
 
 def _get(url):
-    req = urllib.request.Request(url, headers={
+    """เปิดหน้าเว็บ - ลอง proxy ต่างประเทศก่อน ล้มเหลวค่อยยิงตรง
+
+    วัดจริง 2026-08-30 ลองซ้ำ 4 รอบต่อโดเมน:
+        โดเมน               มาเลเซีย  ไทย   ยิงตรง
+        sumo69.info         403x4     403x4  OK      <- bestproxy บล็อกเอง
+        heng35vip.co        403x4     TLSx4  OK      <- bestproxy บล็อกเอง
+        ufafuture-thai.com  OKx4      TLSx4  OK
+        moodeng9999.com     OKx4      TLSx4  OK
+    403 = ตัว proxy ปฏิเสธ CONNECT เอง เหมือนกันทุกประเทศ
+    TLS ขาดกลางคัน = ISP ไทยบล็อก เจอเฉพาะขาออกไทย
+    มาเลเซียจึงใช้เปิดเว็บได้ 4/6 ส่วนไทยได้ 0-1/6 แต่ยิงตรงได้ 6/6 เสมอ
+    """
+    global _ppx_i
+    hdrs = {
         "User-Agent": BROWSER_UA,
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "th,en;q=0.8",
         "Accept-Encoding": "gzip",
-    })
-    # ยิงตรงเสมอ ไม่ผ่าน proxy - ดูเหตุผลที่หัวข้อ proxy pool ข้างบน
-    with urllib.request.urlopen(req, timeout=5, context=_NOVERIFY) as r:
+    }
+    # ลอง proxy ต่างประเทศก่อน ถ้าไม่ผ่านค่อยยิงตรง - ดูเหตุผลที่หัวข้อ proxy pool
+    tries = []
+    if _probe_px:
+        with _px_lock:
+            tries.append(_probe_px[_ppx_i % len(_probe_px)])
+            _ppx_i += 1
+    tries.append(None)                      # ยิงตรงเป็นทางสุดท้ายเสมอ
+    last, r = None, None
+    for px in tries:
+        # ต้องสร้าง Request ใหม่ทุกครั้ง - ProxyHandler เรียก req.set_proxy() ซึ่ง
+        # แก้ตัว Request ถาวร ถ้าเอาตัวเดิมไปยิงตรงต่อ มันจะยังวิ่งเข้า proxy เดิม
+        try:
+            r = build_opener(px, _NOVERIFY).open(
+                urllib.request.Request(url, headers=hdrs), timeout=5)
+            break
+        except Exception as ex:
+            last, r = ex, None
+    if r is None:
+        raise last
+    with r:
         raw = r.read(65536)
         if r.headers.get("Content-Encoding") == "gzip":
             try:
@@ -242,7 +273,10 @@ def probe_site(dom):
     with _probe_lock:
         hit = _probe_cache.get(host)
     if hit is not None:
-        return dict(hit, d=dom)
+        # ผลสำเร็จจำไว้ตลอด แต่ความล้มเหลวจำแค่ 15 นาที
+        # เว็บล่มชั่วคราวหรือเน็ตสะดุด ไม่ควรถูกตราหน้าว่าเปิดไม่ได้ตลอดไป
+        if not hit.get("err") or time.time() - hit.get("_at", 0) < 900:
+            return dict(hit, d=dom)
     out = {"d": dom, "lang": "", "th": False, "title": "", "err": ""}
     for scheme in ("https://", "http://"):
         try:
@@ -271,10 +305,12 @@ def probe_site(dom):
         out["err"] = ""
         if final.split("/")[2].lstrip("www.") != host.lstrip("www."):
             out["to"] = final.split("/")[2]      # เด้งไปโดเมนอื่น
+        out["_at"] = time.time()
         with _probe_lock:
             _probe_cache[host] = out
         return out
-    # เปิดไม่ได้ก็จำไว้ ไม่งั้นรอ timeout ซ้ำทุกรอบ
+    # เปิดไม่ได้ก็จำไว้ ไม่งั้นรอ timeout ซ้ำทุกรอบ - แต่หมดอายุใน 15 นาที
+    out["_at"] = time.time()
     with _probe_lock:
         if len(_probe_cache) < 20000:
             _probe_cache[host] = out
@@ -298,15 +334,17 @@ def probe_many(doms, workers=32):
 #   ถ้าเอา proxy ไปใช้กับตัวเปิดเว็บ จะอ่าน <html lang> ของเว็บที่ต้องการดูไม่ได้เลย
 #
 # ไฟล์ proxies.txt อยู่ใน .gitignore - มีรหัสผ่าน ห้าม commit
-_proxies = []
+_proxies = []          # ใช้กับ RDAP
+_probe_px = []         # ใช้กับการเปิดหน้าเว็บ (คนละชุด คนละประเทศ)
 _px_i = 0
+_ppx_i = 0
 _px_lock = threading.Lock()
 
 
-def load_proxies():
-    """อ่าน proxies.txt รูปแบบ host:port@user:pass บรรทัดละตัว"""
+def load_proxies(name="proxies.txt"):
+    """อ่านไฟล์ proxy รูปแบบ host:port@user:pass บรรทัดละตัว"""
     out = []
-    f = HERE / "proxies.txt"
+    f = HERE / name
     if f.exists():
         for line in f.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -320,32 +358,36 @@ def load_proxies():
                     urllib.parse.quote(pw, safe=""), hp))
             except Exception:
                 continue
-    if not out and ENV.get("proxy"):
+    if not out and name == "proxies.txt" and ENV.get("proxy"):
         out.append(ENV["proxy"])
     return out
 
 
-def next_proxy():
+def next_proxy(pool=None):
     """หมุนไปทีละตัว งานพร้อมกันหลายเส้นจะได้กระจาย IP ไม่กระจุกที่ตัวเดียว"""
     global _px_i
-    if not _proxies:
+    pool = _proxies if pool is None else pool
+    if not pool:
         return None
     with _px_lock:
-        px = _proxies[_px_i % len(_proxies)]
+        px = pool[_px_i % len(pool)]
         _px_i += 1
     return px
 
 
-def proxy_opener(ctx=None):
-    """สร้าง opener ใหม่ทุกครั้ง - handler ต้องประกอบพร้อมกันตอนสร้าง
-    ถ้าไป add_handler ทีหลัง urllib จะไม่ใช้ตัวที่เพิ่มกับ https ที่ผ่าน proxy"""
+def build_opener(px=None, ctx=None):
     hs = []
-    px = next_proxy()
     if px:
         hs.append(urllib.request.ProxyHandler({"http": px, "https": px}))
     if ctx is not None:
         hs.append(urllib.request.HTTPSHandler(context=ctx))
     return urllib.request.build_opener(*hs)
+
+
+def proxy_opener(ctx=None):
+    """สร้าง opener ใหม่ทุกครั้ง - handler ต้องประกอบพร้อมกันตอนสร้าง
+    ถ้าไป add_handler ทีหลัง urllib จะไม่ใช้ตัวที่เพิ่มกับ https ที่ผ่าน proxy"""
+    return build_opener(next_proxy(), ctx)
 
 
 
@@ -740,9 +782,9 @@ class Handler(BaseHTTPRequestHandler):
                        json.dumps(rows, ensure_ascii=False).encode())
         elif self.path == "/api/proxy-status":
             self._send(200, "application/json; charset=utf-8", json.dumps({
-                "count": len(_proxies),
-                "used_for": "RDAP (วันจดโดเมน)",
-                "not_used_for": "เปิดหน้าเว็บ — IP ไทยถูกบล็อกไม่ให้เข้าเว็บพนัน",
+                "rdap": len(_proxies),
+                "probe": len(_probe_px),
+                "note": "RDAP ใช้ชุดไทย · เปิดเว็บใช้ชุดต่างประเทศ ล้มเหลวแล้วยิงตรง",
             }, ensure_ascii=False).encode())
 
         elif self.path == "/api/coverage":
@@ -795,12 +837,13 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     global _proxies
-    _proxies = load_proxies()
+    global _probe_px
+    _proxies = load_proxies("proxies.txt")
+    _probe_px = load_proxies("proxies-probe.txt")
     print("ct-live — ดูสตรีมใบรับรองสดจาก Certificate Transparency")
-    if _proxies:
-        print("proxy: ใช้ %d ตัว หมุนสลับกัน (RDAP + เปิดหน้าเว็บ)" % len(_proxies))
-    else:
-        print("proxy: ไม่ได้ตั้ง — ยิงตรงจากเครื่องนี้")
+    print("proxy RDAP    : %s" % ("%d ตัว หมุนสลับ" % len(_proxies) if _proxies else "ไม่มี — ยิงตรง"))
+    print("proxy เปิดเว็บ : %s" % ("%d ตัว ล้มเหลวแล้วยิงตรง" % len(_probe_px)
+                                    if _probe_px else "ไม่มี — ยิงตรง"))
     print("กำลังโหลดรายชื่อ log จาก Google ...")
     lg = usable_logs(force=True)
     if not lg:
