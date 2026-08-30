@@ -225,7 +225,9 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         พร้อมอายุเป็นจำนวนวัน — โดเมนที่จดมา<b>ไม่เกิน 30 วัน</b>จะขึ้นสีแดง
         เพราะเป็นกลุ่มที่บอทเล็งที่สุด <span class="mono">bbc29pro.com</span>
         ถูกเจาะตอนอายุ <b>6 วัน</b><br>
-        บางนามสกุลไม่เปิดให้ถาม (เช่น <span class="mono">.co</span> ของโคลอมเบีย) จะขึ้นว่าไม่รู้วันจด
+        RDAP ของ IANA มี 1,200 นามสกุล แต่ยังขาด ccTLD หลายตัวรวมถึง
+        <span class="mono">.me</span> กับ <span class="mono">.co</span> พวกนี้ระบบจะถอยไปถาม
+        <b>WHOIS พอร์ต 43</b> ให้เอง (เอาเมาส์ชี้ที่ป้ายจะเห็นว่าได้มาจากทางไหน)
         และทะเบียนจำกัดจำนวนคำขอต่อ IP — ใส่รายชื่อ proxy ใน
         <span class="mono">tools/ct-live/proxies.txt</span> (บรรทัดละ
         <span class="mono">host:port@user:pass</span>) จะหมุนสลับให้เอง<br><br>
@@ -544,7 +546,8 @@ function aiDraw(){
            : r.m==="other" ? '<span class="mk">อื่น</span>' : '';
     if(r.a) mk += r.a.th
       ? '<span class="mk age'+(r.a.days!==null&&r.a.days<=30?" fresh":"")+'" title="จดเมื่อ '+
-        esc(r.a.th)+'">จด '+esc(r.a.th)+(r.a.days!==null?' · '+r.a.days+' วัน':'')+'</span>'
+        esc(r.a.th)+(r.a.via?' (จาก '+esc(r.a.via)+')':'')+'">จด '+esc(r.a.th)+
+        (r.a.days!==null?' · '+r.a.days+' วัน':'')+'</span>'
       : '<span class="mk" title="'+esc(r.a.err||"")+'">ไม่รู้วันจด</span>';
     if(r.p) mk += r.p.ok
       ? '<span class="mk pv" title="'+esc(r.p.title||"")+'">'+esc(r.p.lang||"ไม่ระบุ lang")+
@@ -568,6 +571,7 @@ function aiRows(box, keepTop, keepH, html){
 //   3. ถาม AI         เสีย token      ตัดสินว่าเป็นพนันไหม เฉพาะตัวที่เป็นไทยแล้ว
 // สลับ 2 กับ 3 ก็ได้ผลเหมือนกัน แต่จะจ่าย token ให้เว็บที่ไม่ใช่ไทยเปล่า ๆ
 function pipeline(){
+  if(aiBusy) return;
   var cand=[], seen={};
   ai.forEach(function(r){seen[r.d]=1});
   rows.forEach(function(r){
@@ -576,12 +580,13 @@ function pipeline(){
     seen[r.d]=1; cand.push(r.d);
   });
   if(!cand.length){
-    aiRan=true;
+    aiRan=true; aiBusy=false;
     aiNote="ดู "+rows.length+" โดเมนในสตรีมแล้ว <b>ไม่มีตัวไหนชื่อเข้าเค้าเว็บพนันไทย</b><br>"+
            "ด่านแรกกรองด้วยชื่อ ถ้าไม่ผ่านก็ไม่เปิดเว็บ จะได้ไม่เสียเวลา — ดึงต่อไปเรื่อย ๆ";
     $("#aiTxt").textContent="ไม่มีโดเมนใหม่ที่เข้าเค้า"; aiDraw(); return;
   }
   cand=cand.slice(0,150);
+  aiBusy=true;
   $("#aiDot").className="live";
   $("#aiTxt").textContent="ขั้น 2/3 เปิด "+cand.length+" เว็บดูภาษา...";
   fetch("/api/probe",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -591,7 +596,7 @@ function pipeline(){
       (res.rows||[]).forEach(function(x){ pr[x.d]=x; if(!x.err&&x.th) thai.push(x.d) });
       probed=Object.assign(probed,pr);
       if(!thai.length){
-        $("#aiDot").className="live off"; aiRan=true;
+        $("#aiDot").className="live off"; aiBusy=false; aiRan=true;
         var opened=(res.rows||[]).filter(function(x){return !x.err}).length;
         aiNote="ชื่อเข้าเค้า "+cand.length+" ตัว เปิดได้จริง "+opened+
                " แต่<b>ไม่มีหน้าไหนเป็นภาษาไทย</b> จึงไม่ได้ส่งต่อให้ AI<br>"+
@@ -604,12 +609,14 @@ function pipeline(){
       return fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
                                     body:JSON.stringify(thai.slice(0,60))})
         .then(function(r){return r.json()}).then(function(c){
-          $("#aiDot").className="live off";
+          $("#aiDot").className="live off"; aiBusy=false;
           if(c.error){ $("#aiWarn").hidden=false;
                        $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(c.error); return; }
           aiRan=true; aiNote=""; $("#aiWarn").hidden=true;
+          var have={}; ai.forEach(function(o){have[o.d]=1});
           (c.rows||[]).forEach(function(r){
-            if(!r||!r.d) return;
+            if(!r||!r.d||have[r.d]) return;      // กันชื่อซ้ำ
+            have[r.d]=1;
             r.v=(r.v||"no").toLowerCase();
             if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
             var x=probed[r.d];
@@ -622,7 +629,7 @@ function pipeline(){
           aiDraw();
         });
     })
-    .catch(function(){ $("#aiDot").className="live off"; $("#aiTxt").textContent="ทำไม่สำเร็จ"; });
+    .catch(function(){ aiBusy=false; $("#aiDot").className="live off"; $("#aiTxt").textContent="ทำไม่สำเร็จ"; });
 }
 
 function aiRun(){
@@ -641,8 +648,10 @@ function aiRun(){
       if(res.error){ $("#aiTxt").textContent="ผิดพลาด"; $("#aiWarn").hidden=false;
                      $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(res.error); return; }
       $("#aiWarn").hidden=true; aiRan=true;
+      var have={}; ai.forEach(function(o){have[o.d]=1});
       (res.rows||[]).forEach(function(r){
-        if(!r||!r.d) return;
+        if(!r||!r.d||have[r.d]) return;          // กันชื่อซ้ำ
+        have[r.d]=1;
         r.v=(r.v||"no").toLowerCase();
         if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
         ai.unshift(r);
@@ -699,7 +708,7 @@ $("#btnAge").addEventListener("click",function(){
       var fresh=0, ok=0;
       ai.forEach(function(r){
         var x=by[r.d]; if(!x) return;
-        r.a={th:x.th||"",days:(x.days===undefined?null:x.days),err:x.err||""};
+        r.a={th:x.th||"",days:(x.days===undefined?null:x.days),err:x.err||"",via:x.via||"rdap"};
         if(r.a.th){ ok++; if(r.a.days!==null&&r.a.days<=30) fresh++; }
       });
       $("#aiTxt").textContent="รู้วันจด "+ok+" จาก "+list.length+" · จดใหม่ไม่เกิน 30 วัน "+fresh;

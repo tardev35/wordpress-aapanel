@@ -19,6 +19,7 @@ import base64
 import gzip
 import json
 import re
+import socket
 import struct
 import sys
 import threading
@@ -447,6 +448,68 @@ def rdap_servers():
     return m
 
 
+# ccTLD หลายเจ้ายังไม่ทำ RDAP - IANA มี 1200 TLD แต่ไม่มี .me .co
+# พวกนี้ต้องถอยไปถาม WHOIS พอร์ต 43 แบบเดิม ซึ่งคืนมาเป็นข้อความล้วน
+# ขั้นแรกถาม whois.iana.org ว่า TLD นี้ใครดูแล แล้วค่อยไปถามเจ้านั้นอีกที
+_whois_srv = {}
+RE_CREATED = re.compile(
+    r"(?im)^\s*(?:creation date|created(?:\s+on)?|registered(?:\s+on)?|"
+    r"domain_dateregistered|registration time)\s*:\s*(\S+)")
+
+
+def whois_ask(server, query, timeout=10):
+    with socket.create_connection((server, 43), timeout=timeout) as s:
+        s.sendall((query + "\r\n").encode())
+        buf = b""
+        while len(buf) < 200000:
+            b = s.recv(8192)
+            if not b:
+                break
+            buf += b
+    return buf.decode("utf-8", "ignore")
+
+
+def whois_server_for(tld):
+    with _rdap_lock:
+        if tld in _whois_srv:
+            return _whois_srv[tld]
+    srv = ""
+    try:
+        for line in whois_ask("whois.iana.org", tld).splitlines():
+            if line.lower().startswith("whois:"):
+                srv = line.split(":", 1)[1].strip()
+                break
+    except Exception:
+        pass
+    if not srv:
+        srv = "whois.nic." + tld          # เจ้าใหม่ ๆ ใช้รูปแบบนี้เกือบหมด
+    with _rdap_lock:
+        _whois_srv[tld] = srv
+    return srv
+
+
+def whois_created(domain):
+    """คืนวันจดจาก WHOIS - ไม่ผ่าน proxy เพราะพอร์ต 43 ไม่ใช่ HTTP"""
+    tld = domain.rsplit(".", 1)[-1]
+    srv = whois_server_for(tld)
+    if not srv:
+        return ""
+    try:
+        txt = whois_ask(srv, domain)
+    except Exception:
+        return ""
+    m = RE_CREATED.search(txt)
+    if not m:
+        return ""
+    v = m.group(1).strip().rstrip(",")
+    if len(v) == 8 and v.isdigit():       # 20250725
+        v = "%s-%s-%sT00:00:00Z" % (v[:4], v[4:6], v[6:])
+    elif len(v) == 10:                    # 2025-07-25
+        v = v + "T00:00:00Z"
+    return v
+
+
+
 def domain_age(name):
     """คืนวันจดโดเมน - เอาเฉพาะ registrable domain ไม่ใช่ subdomain"""
     host = str(name)[:120].lower().lstrip("*.").rstrip(".")
@@ -491,6 +554,20 @@ def domain_age(name):
                 pass
             out["err"] = ""
             break
+    if not out["created"]:
+        # RDAP ไม่ได้ผล ลอง WHOIS ต่อ - ccTLD อย่าง .me .co ยังไม่มี RDAP
+        try:
+            c = whois_created(reg)
+        except Exception:
+            c = ""
+        if c:
+            out["created"], out["err"], out["via"] = c, "", "whois"
+            out["th"] = thai_date(c)
+            try:
+                born = datetime.fromisoformat(c.replace("Z", "+00:00"))
+                out["days"] = (datetime.now(timezone.utc) - born).days
+            except Exception:
+                pass
     with _rdap_lock:
         if len(_rdap_cache) < 20000:
             _rdap_cache[reg] = out
