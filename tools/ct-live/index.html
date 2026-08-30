@@ -118,6 +118,7 @@ a.ct:hover{color:var(--alert)}
 .mk.age{background:var(--panel-2);color:var(--dim);font-family:"IBM Plex Mono",monospace}
 .mk.age.fresh{background:var(--alert-soft);color:var(--alert);font-weight:500}
 .mk.pv{background:var(--amber-soft);color:var(--amber);font-family:"IBM Plex Mono",monospace}
+.mk.park{background:var(--panel-2);color:var(--amber);border:1px dashed var(--amber)}
 .empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
 
 /* ---- หน้าอื่น ---- */
@@ -510,7 +511,8 @@ fetch("/api/vocab").then(function(r){return r.json()}).then(function(v){
 // พอทุกตัวเป็นพนันหมดแล้วมันแยกไม่ออก เพราะใช้คำชุดเดียวกันทั้งเอเชีย
 // จึงใช้ได้แค่ตอนที่ยังไม่มีคำตอบจากโมเดล เช่นหน้าสตรีม
 function isTh(r){
-  if(r.p && r.p.ok) return r.p.th;      // เปิดหน้าเว็บดูแล้ว เชื่อได้ที่สุด
+  // หน้า parking เป็นของผู้ให้บริการโดเมน ไม่ใช่เว็บจริง - ภาษาบนหน้านั้นเชื่อไม่ได้
+  if(r.p && r.p.ok && !r.p.parked) return r.p.th;   // เปิดหน้าเว็บจริงแล้ว เชื่อได้ที่สุด
   if(r.m) return r.m==="th";            // โมเดลเห็นบริบททั้งชื่อ
   return thHint(r.u||r.d);              // เดาจากชื่ออย่างเดียว อ่อนสุด
 }
@@ -518,12 +520,14 @@ function isTh(r){
 // "จดใหม่" = จดมาไม่เกินกี่วัน — กลุ่มที่บอทเล็งที่สุด (bbc29pro โดนตอนอายุ 6 วัน)
 var FRESH_DAYS=30;
 // ตัวกรองแท็บชุดเดียว ใช้ร่วมกันทั้งการนับ การแสดงผล และปุ่มเปิดเว็บ/เช็ควันจด
+function isParked(r){ return !!(r.p && r.p.ok && r.p.parked); }  // หน้ายังเป็นของผู้ให้บริการโดเมน
 function aiMatch(r,t){
   if(t==="all")   return true;
   if(t==="th")    return r.v!=="no" && isTh(r);                        // รวมไทย: พนัน + เป็นไทย
-  if(t==="fresh") return r.v!=="no" && isTh(r) &&
-                         r.a && r.a.days!==null && r.a.days<=FRESH_DAYS;  // จดใหม่
-  if(t==="live")  return r.v!=="no" && r.p && r.p.ok && r.p.th;        // ขึ้นเว็บแล้ว: เปิดหน้าได้จริง + lang th
+  if(t==="fresh") return r.v!=="no" && isTh(r) &&                      // จดใหม่: จดไม่นาน
+                         ((r.a && r.a.days!==null && r.a.days<=FRESH_DAYS)
+                          || isParked(r));                             // หรือยังจอดโดเมน = ยังไม่ทำเว็บ = ใหม่
+  if(t==="live")  return r.v!=="no" && r.p && r.p.ok && r.p.th && !r.p.parked;  // ขึ้นเว็บแล้ว: เปิดได้จริง + ไทย
   return r.v===t;                                                      // yes / maybe / no
 }
 
@@ -576,10 +580,13 @@ function aiDraw(){
         esc(r.a.th)+(r.a.via?' (จาก '+esc(r.a.via)+')':'')+'">จด '+esc(r.a.th)+
         (r.a.days!==null?' · '+r.a.days+' วัน':'')+'</span>'
       : '<span class="mk" title="'+esc(r.a.err||"")+'">ไม่รู้วันจด</span>';
-    if(r.p) mk += r.p.ok
-      ? '<span class="mk pv" title="'+esc(r.p.title||"")+'">'+esc(r.p.lang||"ไม่ระบุ lang")+
-        (r.p.chars?' · ไทย '+r.p.chars+' ตัว':'')+'</span>'
-      : '<span class="mk">เปิดไม่ได้</span>';
+    if(r.p){
+      if(!r.p.ok) mk += '<span class="mk">เปิดไม่ได้</span>';
+      else if(r.p.parked) mk += '<span class="mk park" title="หน้ายังเป็นของผู้ให้บริการโดเมน '+
+        esc(r.p.parked)+' = จดแล้วยังไม่ทำเว็บ">จอดโดเมน · '+esc(r.p.parked)+'</span>';
+      else mk += '<span class="mk pv" title="'+esc(r.p.title||"")+'">'+esc(r.p.lang||"ไม่ระบุ lang")+
+        (r.p.chars?' · ไทย '+r.p.chars+' ตัว':'')+'</span>';
+    }
     return '<div class="airow"><span class="vd '+esc(r.v)+'">'+esc(r.v)+'</span>'+
       '<span class="d">'+dlink(r.d)+mk+'</span><span class="w">'+esc(r.w||"")+'</span></div>';
   }).join(""));
@@ -620,10 +627,16 @@ function pipeline(){
   fetch("/api/probe",{method:"POST",headers:{"Content-Type":"application/json"},
                       body:JSON.stringify(cand)})
     .then(function(r){return r.json()}).then(function(res){
-      var pr={}, thai=[];
-      (res.rows||[]).forEach(function(x){ pr[x.d]=x; if(!x.err&&x.th) thai.push(x.d) });
+      var pr={}, thai=[], parkd=[];
+      (res.rows||[]).forEach(function(x){
+        pr[x.d]=x;
+        if(x.err) return;
+        if(x.th) thai.push(x.d);
+        else if(x.parked) parkd.push(x.d);   // จอดโดเมน: ชื่อเข้าเค้าไทยแต่ยังไม่ทำเว็บ -> ให้ AI ตัดสินจากชื่อ
+      });
       probed=Object.assign(probed,pr);
-      if(!thai.length){
+      var cls=thai.concat(parkd);
+      if(!cls.length){
         $("#aiDot").className="live off"; aiBusy=false; aiRan=true;
         var opened=(res.rows||[]).filter(function(x){return !x.err}).length;
         aiNote="ชื่อเข้าเค้า "+cand.length+" ตัว เปิดได้จริง "+opened+
@@ -636,9 +649,10 @@ function pipeline(){
         if(aiAuto && candQ.length) setTimeout(pipeline, 300);   // ยังมีในคิว ลุยต่อ
         return;
       }
-      $("#aiTxt").textContent="ขั้น 3/3 เจอหน้าไทย "+thai.length+" ให้ AI ตัดสินว่าพนันไหม...";
+      $("#aiTxt").textContent="ขั้น 3/3 เจอหน้าไทย "+thai.length+
+        (parkd.length?" + จอดโดเมน "+parkd.length:"")+" ให้ AI ตัดสินว่าพนันไหม...";
       return fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
-                                    body:JSON.stringify(thai.slice(0,60))})
+                                    body:JSON.stringify(cls.slice(0,60))})
         .then(function(r){return r.json()}).then(function(c){
           $("#aiDot").className="live off"; aiBusy=false;
           if(c.error){ $("#aiWarn").hidden=false;
@@ -651,12 +665,14 @@ function pipeline(){
             r.v=(r.v||"no").toLowerCase();
             if(["yes","maybe","no"].indexOf(r.v)<0) r.v="no";
             var x=probed[r.d];
-            if(x) r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,title:x.title||""};
+            if(x) r.p={ok:!x.err,th:!!x.th,lang:x.lang||"",chars:x.thai_chars||0,
+                       title:x.title||"",parked:x.parked||""};
             ai.unshift(r);
             if(r.v!=="no" && isTh(r)) newHits.push(r);   // ยืนยันว่าไทย+พนัน = ของใหม่ที่ต้องเตือน
           });
           ai=ai.slice(0,1000);
           $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไทย "+thai.length+
+            (parkd.length?" จอดโดเมน "+parkd.length:"")+
             " · เข้าเค้าชื่อสะสม "+candTotal.toLocaleString()+" · รอคิวอีก "+candQ.length.toLocaleString();
           aiDraw();
           if(newHits.length) alertNewHits(newHits);   // เช็ควันจดอัตโนมัติ + เตือน + เก็บ log
@@ -763,6 +779,7 @@ function saveHits(hits){
   var payload=(hits||[]).filter(function(r){return r&&r.d}).map(function(r){
     return {d:r.d, v:r.v, m:r.m||"", w:r.w||"",
             lang:(r.p?r.p.lang:""), chars:(r.p?r.p.chars:0), title:(r.p?r.p.title:""),
+            parked:(r.p?r.p.parked:"")||"",
             th:(r.a?r.a.th:""), days:(r.a?r.a.days:null), via:(r.a?r.a.via:"")};
   });
   if(!payload.length) return;
@@ -775,8 +792,10 @@ function loadHits(){
     var have={}; ai.forEach(function(o){have[o.d]=1});
     (res.rows||[]).forEach(function(h){
       if(!h.d||have[h.d]) return; have[h.d]=1;
+      // ของที่ยังจอดโดเมน: หน้าไม่ใช่เว็บจริง จึง th=false (ให้ isTh ตกไปใช้ชื่อ/โมเดล)
+      var pk=h.parked||"";
       ai.push({d:h.d, v:h.v||"no", m:h.m||"", w:h.w||"",
-        p:{ok:true, th:true, lang:h.lang||"", chars:h.chars||0, title:h.title||""},
+        p:{ok:true, th:pk?false:true, parked:pk, lang:h.lang||"", chars:h.chars||0, title:h.title||""},
         a:{th:h.th||"", days:(h.age_days===null?null:h.age_days), via:h.via||"", err:""},
         _n:false, _notified:true});   // ของเก่า ไม่เด้งเตือนซ้ำ
     });

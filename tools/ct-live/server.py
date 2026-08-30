@@ -82,7 +82,11 @@ def _db():
         d TEXT PRIMARY KEY, v TEXT, m TEXT, w TEXT,
         lang TEXT, chars INTEGER, title TEXT,
         th TEXT, age_days INTEGER, via TEXT,
-        first_seen INTEGER, day TEXT)""")
+        first_seen INTEGER, day TEXT, parked TEXT DEFAULT '')""")
+    # เพิ่มคอลัมน์ parked ให้ DB เก่าที่สร้างก่อนมีฟีเจอร์นี้
+    have = [c[1] for c in con.execute("PRAGMA table_info(hits)")]
+    if "parked" not in have:
+        con.execute("ALTER TABLE hits ADD COLUMN parked TEXT DEFAULT ''")
     return con
 
 
@@ -119,16 +123,17 @@ def db_add(rows):
                 continue                   # ไม่ใช่โดเมน -> ข้าม (ไม่ให้ลง PRIMARY KEY)
             con.execute(
                 """INSERT INTO hits
-                   (d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                   (d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day,parked)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(d) DO UPDATE SET
                      v=excluded.v, m=excluded.m, w=excluded.w,
-                     th=excluded.th, age_days=excluded.age_days, via=excluded.via""",
+                     th=excluded.th, age_days=excluded.age_days, via=excluded.via,
+                     parked=excluded.parked""",
                 (d, _clip(r.get("v"), 8), _clip(r.get("m"), 300), _clip(r.get("w"), 120),
                  _clip(r.get("lang"), 40), _to_int(r.get("chars")) or 0,
                  _clip(r.get("title"), 300),
                  _clip(r.get("th"), 40), _to_int(r.get("days")), _clip(r.get("via"), 40),
-                 now, today))
+                 now, today, _clip(r.get("parked"), 40)))
         _db_purge(con)
         con.commit()
         n = con.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
@@ -142,7 +147,7 @@ def db_recent(limit=2000):
         _db_purge(con)
         con.commit()
         cur = con.execute(
-            "SELECT d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day "
+            "SELECT d,v,m,w,lang,chars,title,th,age_days,via,first_seen,day,parked "
             "FROM hits ORDER BY first_seen DESC LIMIT ?", (limit,))
         cols = [c[0] for c in cur.description]
         out = [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -351,6 +356,37 @@ _probe_cache = {}
 _probe_lock = threading.Lock()
 
 
+# ---------- ตรวจหน้า "จอดโดเมน" (registrar/parking) ----------
+# โดเมนที่จดแล้วยังไม่ทำเว็บ จะโชว์หน้าของผู้ให้บริการ (Dynadot ฯลฯ) หรือหน้าประกาศขาย
+# ถ้าชื่อเข้าเค้าพนันไทยแต่ยังจอดอยู่ = เพิ่งจด ยังไม่ขึ้นเว็บ -> ควรอยู่กลุ่ม "จดใหม่"
+_PARK_HOSTS = ("dynadot", "sedo", "afternic", "godaddy", "parkingcrew",
+               "bodis", "above.com", "hugedomains", "dan.com", "uniregistry",
+               "namesilo", "porkbun", "sav.com", "cashparking", "parklogic",
+               "voodoo.com", "fabulous.com")
+_PARK_MARK = ("domain is for sale", "buy this domain", "this domain is for sale",
+              "domain for sale", "is for sale", "domain parking", "parked free",
+              "future home of", "domain has expired", "dynadot", "sedo",
+              "afternic", "hugedomains", "godaddy")
+_PARK_BODY = ("domain is for sale", "buy this domain", "this domain is for sale",
+              "future home of", "domain has expired", "dynadot.com",
+              "sedoparking", "hugedomains.com", "afternic.com")
+
+
+def _park_hit(text, keys):
+    t = (text or "").lower()
+    for k in keys:
+        if k in t:
+            return k
+    return ""
+
+
+def _is_parked(title, body, to):
+    # 1) เด้งไปโฮสต์ของผู้ให้บริการโดเมน/รับจอด  2) title มีคำหน้าจอด/ประกาศขาย
+    # 3) เนื้อหาส่วนต้นมีวลีขายโดเมนชัด ๆ (จำกัดช่วงกันจับผิด)
+    return (_park_hit(to, _PARK_HOSTS) or _park_hit(title, _PARK_MARK)
+            or _park_hit((body or "")[:4000], _PARK_BODY))
+
+
 def probe_site(dom):
     """เปิดหน้าเว็บอ่านแค่ lang กับ title - ไม่รันสคริปต์ ไม่ตามลิงก์ต่อ"""
     host = str(dom)[:120].lstrip("*.")
@@ -389,6 +425,8 @@ def probe_site(dom):
         out["err"] = ""
         if final.split("/")[2].lstrip("www.") != host.lstrip("www."):
             out["to"] = final.split("/")[2]      # เด้งไปโดเมนอื่น
+        # หน้าจอดโดเมน = ยังไม่ทำเว็บจริง (สัญญาณว่าเพิ่งจด) เก็บชื่อผู้ให้บริการที่เจอ
+        out["parked"] = _is_parked(out["title"], body, out.get("to", ""))
         out["_at"] = time.time()
         with _probe_lock:
             _probe_cache[host] = out
