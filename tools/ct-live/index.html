@@ -120,6 +120,21 @@ a.ct:hover{color:var(--alert)}
 .mk.pv{background:var(--amber-soft);color:var(--amber);font-family:"IBM Plex Mono",monospace}
 .mk.park{background:var(--panel-2);color:var(--amber);border:1px dashed var(--amber)}
 .mk.live{background:#e6f6ec;color:#137333;font-weight:600;border:1px solid #13733333}
+.statshead{font-size:13px;color:var(--dim);margin:2px 0 14px}
+.statsgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.sblock{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+.sblock.wide{margin-top:16px}
+.sblock h4{margin:0 0 10px;font-size:13px;color:var(--ink)}
+.sbar{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px}
+.sk{width:86px;flex:none;font-family:"IBM Plex Mono",monospace;color:var(--dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb{flex:1;height:9px;background:var(--panel-2);border-radius:5px;overflow:hidden}
+.sb i{display:block;height:100%;background:var(--alert);border-radius:5px}
+.sv{width:38px;flex:none;text-align:right;font-family:"IBM Plex Mono",monospace}
+.stab{width:100%;border-collapse:collapse;font-size:12.5px}
+.stab th,.stab td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.stab th{color:var(--dim);font-weight:500}
+.stab td .sb{display:inline-block;width:70px;vertical-align:middle}
 .empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:14px}
 
 /* ---- หน้าอื่น ---- */
@@ -553,15 +568,17 @@ function aiDraw(){
   });
   $("#navAiC").textContent = aiRan ? c.th : "–";
   $("#aiTabs").innerHTML=[["th","รวมไทย"],["fresh","จดใหม่"],["live","ขึ้นเว็บแล้ว"],
-                          ["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"]]
+                          ["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"],
+                          ["stats","📊 สถิติ"]]
     .map(function(x){
-      var n = x[0]==="all" ? ai.length : (c[x[0]]||0);
-      return '<button class="tab'+(aiTab===x[0]?" on":"")+'" data-a="'+x[0]+'">'+x[1]+'<span class="c">'+n+'</span></button>';
+      var cnt = x[0]==="stats" ? "" : '<span class="c">'+(x[0]==="all"?ai.length:(c[x[0]]||0))+'</span>';
+      return '<button class="tab'+(aiTab===x[0]?" on":"")+'" data-a="'+x[0]+'">'+x[1]+cnt+'</button>';
     }).join("");
   $("#aiTabs").querySelectorAll(".tab").forEach(function(b){
     b.addEventListener("click",function(){aiTab=b.dataset.a;aiDraw();
       if(aiTab==="live") ensureLive();});   // เปิดแท็บนี้ = ให้ Gemini อ่าน title ยืนยันว่าขึ้นจริง
   });
+  if(aiTab==="stats"){ drawStats(); return; }   // แท็บสถิติ - แสดงสรุปแทนรายการ
   var list=ai.filter(function(r){return aiMatch(r,aiTab)});
   if(!list.length){
     aiRows(box, keepTop, keepH, '<div class="empty">'+
@@ -785,6 +802,40 @@ function notifyFresh(r){
     var b=$("#freshBar");
     if(b){ b.hidden=false; b.innerHTML="🔔 <b>เจอเว็บพนันไทยเพิ่งจด "+days+" วัน:</b> "+esc(r.d); }
   }
+}
+
+// แผงสถิติ (descriptive) - สรุปคำ/เลข/TLD/ปริมาณ/อายุ จากโดเมนใน hits.db
+function drawStats(){
+  var box=$("#aiRows");
+  box.innerHTML='<div class="empty">กำลังโหลดสถิติ...</div>';
+  fetch("/api/stats").then(function(r){return r.json()}).then(function(s){
+    if(!s||s.error){ box.innerHTML='<div class="empty">โหลดสถิติไม่ได้'+(s&&s.error?': '+esc(s.error):'')+'</div>'; return; }
+    function bars(title, arr){
+      if(!arr||!arr.length) return "";
+      var max=arr[0][1]||1;
+      return '<div class="sblock"><h4>'+title+'</h4>'+arr.map(function(kv){
+        return '<div class="sbar"><span class="sk">'+esc(String(kv[0]))+'</span>'+
+          '<span class="sb"><i style="width:'+Math.round(kv[1]/max*100)+'%"></i></span>'+
+          '<span class="sv">'+kv[1]+'</span></div>';
+      }).join("")+'</div>';
+    }
+    var html='<div class="statshead">สรุปจาก <b>'+(s.total||0).toLocaleString()+
+      '</b> โดเมนที่เก็บไว้ (หมุน 3 วัน) — นับล้วน ๆ ไว้ดูภูมิทัศน์ตลาด</div><div class="statsgrid">';
+    html+=bars("คำ/สัญญาณยอดฮิต", s.words);
+    html+=bars("เลขยอดฮิต", s.nums);
+    html+=bars("นามสกุล (TLD)", s.tlds);
+    html+=bars("ปริมาณต่อวัน", s.perday);
+    html+='</div>';
+    if(s.age&&s.age.length){
+      html+='<div class="sblock wide"><h4>อายุจด vs ขึ้นเว็บแล้ว</h4><table class="stab">'+
+        '<tr><th>อายุจด</th><th>รวม</th><th>ขึ้นแล้ว</th><th>สัดส่วน</th></tr>'+
+        s.age.map(function(a){ var pct=a.tot?Math.round(a.live/a.tot*100):0;
+          return '<tr><td>'+esc(a.b)+' วัน</td><td>'+a.tot+'</td><td>'+a.live+
+            '</td><td><span class="sb"><i style="width:'+pct+'%"></i></span> '+pct+'%</td></tr>';
+        }).join("")+'</table></div>';
+    }
+    box.innerHTML=html;
+  }).catch(function(){ box.innerHTML='<div class="empty">โหลดสถิติไม่ได้ (เรียก server ไม่สำเร็จ)</div>'; });
 }
 
 // ให้ Gemini อ่าน "title" ของหน้าที่ probe มาแล้ว บอกว่าเป็นเว็บพนันเปิดจริงไหม -> r.live

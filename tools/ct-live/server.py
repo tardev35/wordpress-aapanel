@@ -155,6 +155,60 @@ def db_recent(limit=2000):
         out = [dict(zip(cols, row)) for row in cur.fetchall()]
         con.close()
         return out
+
+
+# คำ/สัญญาณที่พบบ่อยในชื่อเว็บพนันไทย - ใช้แค่ "นับความถี่" ในแผงสถิติ (descriptive)
+_STAT_WORDS = ["slot", "casino", "baccarat", "bacara", "bet", "pg", "ufa", "amb", "joker",
+               "sexy", "sbo", "sagame", "huay", "lotto", "lucky", "king", "gold", "rich",
+               "win", "vip", "pro", "auto", "wallet", "game", "play", "club", "zeed",
+               "fun", "hub", "thai", "789bet", "689", "auto"]
+
+
+def _age_bucket(d):
+    if d is None:
+        return "?"
+    d = int(d)
+    return ("0-7" if d <= 7 else "8-30" if d <= 30 else "31-90" if d <= 90
+            else "91-180" if d <= 180 else "180+")
+
+
+def stats():
+    """สรุปสถิติจากโดเมนที่เก็บใน hits.db - นับล้วน ๆ ไม่มีการตีความ"""
+    from collections import Counter
+    with _db_lock:
+        con = _db()
+        _db_purge(con)
+        con.commit()
+        rows = con.execute("SELECT d, age_days, live, day FROM hits").fetchall()
+        con.close()
+    words, nums, tlds, perday = Counter(), Counter(), Counter(), Counter()
+    ages = {b: [0, 0] for b in ("0-7", "8-30", "31-90", "91-180", "180+", "?")}
+    for d, age, live, day in rows:
+        name = str(d or "").lstrip("*.").lower()
+        sld, tld = (name.rsplit(".", 1) + [""])[:2] if "." in name else (name, "")
+        if tld:
+            tlds[tld] += 1
+        for w in _STAT_WORDS:
+            if w in sld:
+                words[w] += 1
+        for n in re.findall(r"\d+", sld):
+            nums[n] += 1
+        if day:
+            perday[day] += 1
+        b = _age_bucket(age)
+        ages[b][0] += 1
+        if live == "yes":
+            ages[b][1] += 1
+    order = ("0-7", "8-30", "31-90", "91-180", "180+", "?")
+    return {
+        "total": len(rows),
+        "words": words.most_common(16),
+        "nums": nums.most_common(12),
+        "tlds": tlds.most_common(12),
+        "perday": sorted(perday.items(), reverse=True)[:14],
+        "age": [{"b": b, "tot": ages[b][0], "live": ages[b][1]}
+                for b in order if ages[b][0]],
+    }
 _proxies = []          # เติมจริงตอน main() หลังนิยาม load_proxies
 _logs_cache = {"at": 0.0, "logs": []}
 _seen = set()          # กันไม่ให้โดเมนเดิมโผล่ซ้ำเวลา log ยังไม่ขยับ
@@ -1075,6 +1129,15 @@ class Handler(BaseHTTPRequestHandler):
                 print("db_recent error:", ex)
             self._send(200, "application/json; charset=utf-8",
                        json.dumps({"rows": rows}, ensure_ascii=False).encode())
+
+        elif self.path == "/api/stats":
+            try:
+                s = stats()
+            except Exception as ex:
+                s = {"error": str(ex)}
+                print("stats error:", ex)
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps(s, ensure_ascii=False).encode())
 
         elif self.path == "/api/vocab":
             # คำที่ถอดจากโดเมนจริงด้วย tune.py - ไม่มีไฟล์ก็ใช้กฎโครงสร้างอย่างเดียว
