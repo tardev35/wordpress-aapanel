@@ -526,18 +526,20 @@ var LIVE_MIN_TH=150;
 function isParked(r){ return !!(r.p && r.p.ok && r.p.parked); }  // หน้ายังเป็นของผู้ให้บริการโดเมน
 // เปิดได้ + ธงว่าไทย แต่เนื้อหาไทยน้อยมาก = หน้า placeholder/ns parking ยังไม่ใช่เว็บจริง
 function isThin(r){ return !!(r.p && r.p.ok && !r.p.parked && r.p.th && (r.p.chars||0)<LIVE_MIN_TH); }
-// เกณฑ์ประมาณจากเนื้อหา (ใช้ก่อน Gemini อ่าน title) — เปิดได้จริง + ไทย + เนื้อหาไทยเยอะ
-function heurLive(r){ return !!(r.p && r.p.ok && r.p.th && !r.p.parked && (r.p.chars||0)>=LIVE_MIN_TH); }
-// "ขึ้นเว็บแล้ว" ยึด Gemini อ่าน title เป็นหลัก (r.live) ยังไม่เช็คก็ใช้เกณฑ์ประมาณไปก่อน
-function liveYes(r){ return r.live===true  || (r.live===undefined && heurLive(r)); }
-function liveNo(r){  return r.live===false || (r.live===undefined && isThin(r)); }
+// "ขึ้นเว็บแล้ว" ต้องครบทุกข้อ: เปิดหน้าได้จริง + ไม่ใช่หน้าจอด + เนื้อหาไทย "เยอะจริง" (>=LIVE_MIN_TH)
+// Gemini อ่าน title ได้แค่ "ตัดออก" (r.live===false = for-sale/coming-soon) ดันหน้าบางเข้าไม่ได้
+// เหตุผล: title พนัน (เช่น 168PG) บนหน้าที่เนื้อห ยังบาง = จดแล้วแปะ title ไว้ ยังไม่ทำเว็บจริง
+function isLive(r){
+  return r.v!=="no" && r.p && r.p.ok && !r.p.parked
+      && (r.p.chars||0)>=LIVE_MIN_TH && r.live!==false;
+}
 function aiMatch(r,t){
   if(t==="all")   return true;
   if(t==="th")    return r.v!=="no" && isTh(r);                        // รวมไทย: พนัน + เป็นไทย
   if(t==="fresh") return r.v!=="no" && isTh(r) &&                      // จดใหม่: ยังไม่ขึ้นเว็บจริง
                          ((r.a && r.a.days!==null && r.a.days<=FRESH_DAYS)
-                          || isParked(r) || liveNo(r));                // จอดโดเมน/หน้าบาง/Gemini ว่ายังไม่ขึ้น
-  if(t==="live")  return r.v!=="no" && liveYes(r);                     // ขึ้นเว็บแล้ว: Gemini อ่าน title ยืนยัน
+                          || isParked(r) || isThin(r) || r.live===false);
+  if(t==="live")  return isLive(r);                                    // ขึ้นเว็บแล้ว
   return r.v===t;                                                      // yes / maybe / no
 }
 
@@ -603,8 +605,9 @@ function aiDraw(){
           (thin?' · หน้าบาง':'')+'</span>';
       }
     }
-    if(r.live===true) mk += '<span class="mk live" title="Gemini อ่าน title แล้ว = เว็บพนันเปิดจริง">✓ ขึ้นแล้ว</span>';
-    else if(r.live===false) mk += '<span class="mk" title="Gemini อ่าน title แล้ว = ยังไม่ใช่เว็บพนันที่เปิดจริง">ยังไม่ขึ้น</span>';
+    if(isLive(r)) mk += '<span class="mk live" title="เปิดหน้าได้จริง + เนื้อหาไทยเยอะ'+
+      (r.live===true?' + Gemini ยืนยันจาก title':'')+'">✓ ขึ้นแล้ว</span>';
+    else if(r.live===false) mk += '<span class="mk" title="Gemini อ่าน title แล้ว = ยังไม่ใช่เว็บที่เปิดจริง">ยังไม่ขึ้น</span>';
     return '<div class="airow"><span class="vd '+esc(r.v)+'">'+esc(r.v)+'</span>'+
       '<span class="d">'+dlink(r.d)+mk+'</span><span class="w">'+esc(r.w||"")+'</span></div>';
   }).join(""));
@@ -800,7 +803,9 @@ function notifyFresh(r){
 // ส่งเฉพาะ title ที่ดึงมาแล้ว ไม่ได้เปิดเว็บซ้ำ ทำเฉพาะตัวไทย+พนัน ที่ยังไม่เช็ค
 function checkLive(rows){
   var need=(rows||ai).filter(function(r){
-    return r.v!=="no" && r.p && r.p.ok && !r.p.parked && r.p.title && r.live===undefined;
+    // ถาม Gemini เฉพาะตัวที่เนื้อหาถึงเกณฑ์ (มีสิทธิ์เป็น live จริง) — หน้าบางข้าม ประหยัด token
+    return r.v!=="no" && r.p && r.p.ok && !r.p.parked && r.p.title
+        && (r.p.chars||0)>=LIVE_MIN_TH && r.live===undefined;
   }).slice(0,60);
   if(!need.length) return Promise.resolve(0);
   return fetch("/api/live",{method:"POST",headers:{"Content-Type":"application/json"},
