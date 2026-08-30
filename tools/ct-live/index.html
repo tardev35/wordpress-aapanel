@@ -454,7 +454,7 @@ function isTh(r){
 }
 
 /* ---------------- คัดกรองด้วย AI ---------------- */
-var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false, probed={};
+var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false, probed={}, aiNote="";
 
 function aiDraw(){
   // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
@@ -480,8 +480,9 @@ function aiDraw(){
   });
   if(!list.length){
     aiRows(box, keepTop, keepH, '<div class="empty">'+
-      (!ai.length ? (aiRan ? "คัดกรองแล้ว ไม่พบโดเมนที่เข้าข่ายในรอบนี้"
-                            : "ยังไม่ได้คัดกรอง — กด “คัดกรองรายการที่ดึงมา”")
+      (!ai.length ? (aiNote ? aiNote
+                     : aiRan ? "คัดกรองแล้ว ไม่พบโดเมนที่เข้าข่ายในรอบนี้"
+                             : "ยังไม่ได้คัดกรอง — กด “หาเว็บพนันไทย”")
        : aiTab==="th" ? "คัดกรองไปแล้ว "+ai.length+" โดเมน <b>ยังไม่เจอของตลาดไทย</b><br>"+
            "เว็บพนันไทยเป็นส่วนน้อยมากในสตรีมรวมทั้งโลก — ดึงต่อไปเรื่อย ๆ หรือดูแท็บอื่นก่อน"
        : "ไม่มีรายการในกลุ่มนี้")+'</div>');
@@ -520,7 +521,12 @@ function pipeline(){
     if(!thHint(r.u||r.d)) return;             // ขั้น 1 - ชื่อไม่เข้าเค้าก็ไม่ต้องเปิด
     seen[r.d]=1; cand.push(r.d);
   });
-  if(!cand.length){ $("#aiTxt").textContent="ไม่มีโดเมนใหม่ที่เข้าเค้า"; return; }
+  if(!cand.length){
+    aiRan=true;
+    aiNote="ดู "+rows.length+" โดเมนในสตรีมแล้ว <b>ไม่มีตัวไหนชื่อเข้าเค้าเว็บพนันไทย</b><br>"+
+           "ด่านแรกกรองด้วยชื่อ ถ้าไม่ผ่านก็ไม่เปิดเว็บ จะได้ไม่เสียเวลา — ดึงต่อไปเรื่อย ๆ";
+    $("#aiTxt").textContent="ไม่มีโดเมนใหม่ที่เข้าเค้า"; aiDraw(); return;
+  }
   cand=cand.slice(0,150);
   $("#aiDot").className="live";
   $("#aiTxt").textContent="ขั้น 2/3 เปิด "+cand.length+" เว็บดูภาษา...";
@@ -531,9 +537,14 @@ function pipeline(){
       (res.rows||[]).forEach(function(x){ pr[x.d]=x; if(!x.err&&x.th) thai.push(x.d) });
       probed=Object.assign(probed,pr);
       if(!thai.length){
-        $("#aiDot").className="live off";
-        $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไม่เจอหน้าภาษาไทยเลย";
-        return;
+        $("#aiDot").className="live off"; aiRan=true;
+        var opened=(res.rows||[]).filter(function(x){return !x.err}).length;
+        aiNote="ชื่อเข้าเค้า "+cand.length+" ตัว เปิดได้จริง "+opened+
+               " แต่<b>ไม่มีหน้าไหนเป็นภาษาไทย</b> จึงไม่ได้ส่งต่อให้ AI<br>"+
+               "เว็บพนันไทยเป็นส่วนน้อยมากในสตรีมรวมทั้งโลก รอบเดียวไม่เจอเป็นเรื่องปกติ — "+
+               "ติ๊ก “ทำอัตโนมัติทุกรอบที่ดึง” แล้วปล่อยไว้จะได้ผลดีกว่านั่งกด";
+        $("#aiTxt").textContent="เปิด "+cand.length+" เว็บ ไม่เจอหน้าภาษาไทย";
+        aiDraw(); return;
       }
       $("#aiTxt").textContent="ขั้น 3/3 เจอหน้าไทย "+thai.length+" ให้ AI ตัดสินว่าพนันไหม...";
       return fetch("/api/classify",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -542,7 +553,7 @@ function pipeline(){
           $("#aiDot").className="live off";
           if(c.error){ $("#aiWarn").hidden=false;
                        $("#aiWarn").innerHTML="<b>เรียกโมเดลไม่สำเร็จ</b> — "+esc(c.error); return; }
-          aiRan=true; $("#aiWarn").hidden=true;
+          aiRan=true; aiNote=""; $("#aiWarn").hidden=true;
           (c.rows||[]).forEach(function(r){
             if(!r||!r.d) return;
             r.v=(r.v||"no").toLowerCase();
