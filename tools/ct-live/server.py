@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 import ssl
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -64,6 +65,7 @@ def load_env():
 
 
 ENV = load_env()
+_proxies = []          # เติมจริงตอน main() หลังนิยาม load_proxies
 _logs_cache = {"at": 0.0, "logs": []}
 _seen = set()          # กันไม่ให้โดเมนเดิมโผล่ซ้ำเวลา log ยังไม่ขยับ
 _seen_order = []
@@ -219,6 +221,7 @@ def _get(url):
         "Accept-Language": "th,en;q=0.8",
         "Accept-Encoding": "gzip",
     })
+    # ยิงตรงเสมอ ไม่ผ่าน proxy - ดูเหตุผลที่หัวข้อ proxy pool ข้างบน
     with urllib.request.urlopen(req, timeout=5, context=_NOVERIFY) as r:
         raw = r.read(65536)
         if r.headers.get("Content-Encoding") == "gzip":
@@ -284,6 +287,68 @@ def probe_many(doms, workers=32):
 
 
 
+# ---------------------------------------------------------------- proxy pool
+# ใช้กับ RDAP เท่านั้น - ทะเบียนโดเมนจำกัดคำขอต่อ IP หนัก กระจาย 20 IP ถึงจะเช็คได้เยอะ
+#
+# ⚠️ ห้ามใช้กับการเปิดหน้าเว็บ - วัดแล้วด้วย proxy ไทย 20 ตัว 2026-08-30:
+#      เว็บทั่วไป (wikipedia, example.com)  ผ่าน proxy OK   ยิงตรง OK
+#      เว็บพนันไทยที่ใช้งานจริง             ผ่าน proxy ตัด   ยิงตรง OK
+#   อาการเป็น "Tunnel connection failed: 403" หรือ TLS ถูกตัดที่ 5.2 วินาทีเป๊ะ ๆ
+#   ทุกครั้ง ซึ่งเป็นการบล็อกกลางทางระดับ ISP ไทย ไม่ใช่เว็บล่ม
+#   ถ้าเอา proxy ไปใช้กับตัวเปิดเว็บ จะอ่าน <html lang> ของเว็บที่ต้องการดูไม่ได้เลย
+#
+# ไฟล์ proxies.txt อยู่ใน .gitignore - มีรหัสผ่าน ห้าม commit
+_proxies = []
+_px_i = 0
+_px_lock = threading.Lock()
+
+
+def load_proxies():
+    """อ่าน proxies.txt รูปแบบ host:port@user:pass บรรทัดละตัว"""
+    out = []
+    f = HERE / "proxies.txt"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "@" not in line:
+                continue
+            try:
+                hp, cred = line.split("@", 1)
+                user, pw = cred.rsplit(":", 1)
+                out.append("http://%s:%s@%s" % (
+                    urllib.parse.quote(user, safe=""),
+                    urllib.parse.quote(pw, safe=""), hp))
+            except Exception:
+                continue
+    if not out and ENV.get("proxy"):
+        out.append(ENV["proxy"])
+    return out
+
+
+def next_proxy():
+    """หมุนไปทีละตัว งานพร้อมกันหลายเส้นจะได้กระจาย IP ไม่กระจุกที่ตัวเดียว"""
+    global _px_i
+    if not _proxies:
+        return None
+    with _px_lock:
+        px = _proxies[_px_i % len(_proxies)]
+        _px_i += 1
+    return px
+
+
+def proxy_opener(ctx=None):
+    """สร้าง opener ใหม่ทุกครั้ง - handler ต้องประกอบพร้อมกันตอนสร้าง
+    ถ้าไป add_handler ทีหลัง urllib จะไม่ใช้ตัวที่เพิ่มกับ https ที่ผ่าน proxy"""
+    hs = []
+    px = next_proxy()
+    if px:
+        hs.append(urllib.request.ProxyHandler({"http": px, "https": px}))
+    if ctx is not None:
+        hs.append(urllib.request.HTTPSHandler(context=ctx))
+    return urllib.request.build_opener(*hs)
+
+
+
 # ---------------------------------------------------------------- วันจดโดเมน
 # ใช้ RDAP ไม่ใช่ WHOIS - RDAP คืน JSON มีมาตรฐาน ไม่ต้องเดาว่าแต่ละ registry
 # จัดหน้าข้อความยังไง (WHOIS แต่ละเจ้าเขียนคนละแบบหมด)
@@ -304,14 +369,6 @@ def thai_date(iso):
     except Exception:
         return ""
     return "%d %s %d" % (d.day, TH_MON[d.month], d.year + 543)
-
-
-def _opener():
-    px = ENV.get("proxy")
-    if px:
-        return urllib.request.build_opener(
-            urllib.request.ProxyHandler({"http": px, "https": px}))
-    return urllib.request.build_opener()
 
 
 def rdap_servers():
@@ -358,7 +415,7 @@ def domain_age(name):
         try:
             req = urllib.request.Request(u, headers={"Accept": "application/rdap+json",
                                                      "User-Agent": BROWSER_UA})
-            with _opener().open(req, timeout=12) as r:
+            with proxy_opener().open(req, timeout=12) as r:
                 d = json.loads(r.read(400000).decode("utf-8", "ignore"))
         except Exception as ex:
             out["err"] = type(ex).__name__
@@ -681,6 +738,13 @@ class Handler(BaseHTTPRequestHandler):
                 print("sweep error:", ex)
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(rows, ensure_ascii=False).encode())
+        elif self.path == "/api/proxy-status":
+            self._send(200, "application/json; charset=utf-8", json.dumps({
+                "count": len(_proxies),
+                "used_for": "RDAP (วันจดโดเมน)",
+                "not_used_for": "เปิดหน้าเว็บ — IP ไทยถูกบล็อกไม่ให้เข้าเว็บพนัน",
+            }, ensure_ascii=False).encode())
+
         elif self.path == "/api/coverage":
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(coverage(), ensure_ascii=False).encode())
@@ -730,7 +794,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global _proxies
+    _proxies = load_proxies()
     print("ct-live — ดูสตรีมใบรับรองสดจาก Certificate Transparency")
+    if _proxies:
+        print("proxy: ใช้ %d ตัว หมุนสลับกัน (RDAP + เปิดหน้าเว็บ)" % len(_proxies))
+    else:
+        print("proxy: ไม่ได้ตั้ง — ยิงตรงจากเครื่องนี้")
     print("กำลังโหลดรายชื่อ log จาก Google ...")
     lg = usable_logs(force=True)
     if not lg:

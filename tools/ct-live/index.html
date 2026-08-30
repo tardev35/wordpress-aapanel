@@ -226,8 +226,14 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
         เพราะเป็นกลุ่มที่บอทเล็งที่สุด <span class="mono">bbc29pro.com</span>
         ถูกเจาะตอนอายุ <b>6 วัน</b><br>
         บางนามสกุลไม่เปิดให้ถาม (เช่น <span class="mono">.co</span> ของโคลอมเบีย) จะขึ้นว่าไม่รู้วันจด
-        และทะเบียนจำกัดจำนวนคำขอต่อ IP — ถ้าเช็คเยอะ ตั้ง
-        <span class="mono">PROXY_URL</span> ใน <span class="mono">.env</span> ได้
+        และทะเบียนจำกัดจำนวนคำขอต่อ IP — ใส่รายชื่อ proxy ใน
+        <span class="mono">tools/ct-live/proxies.txt</span> (บรรทัดละ
+        <span class="mono">host:port@user:pass</span>) จะหมุนสลับให้เอง<br><br>
+        <b>proxy ใช้กับ RDAP เท่านั้น ไม่ใช้กับการเปิดหน้าเว็บ</b> —
+        วัดกับ proxy ไทย 20 ตัวแล้ว เว็บทั่วไปผ่านได้ปกติ แต่<b>เว็บพนันถูกตัดทุกตัว</b>
+        (ขึ้น <span class="mono">403</span> หรือ TLS ขาดที่ 5.2 วินาทีเป๊ะ ๆ)
+        เป็นการบล็อกระดับ ISP ไทย ถ้าเอา proxy ไปใช้เปิดเว็บด้วยจะอ่าน
+        <span class="mono">lang</span> ของเว็บที่อยากดูไม่ได้เลย
       </p>
     </div>
 

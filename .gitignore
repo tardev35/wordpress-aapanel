@@ -21,3 +21,6 @@ __pycache__/
 
 # vocab เต็มมีชื่อแบรนด์ทั้งพอร์ต - commit เฉพาะ vocab-generic.json
 tools/ct-live/vocab.json
+
+# รายชื่อ proxy มีรหัสผ่าน - ห้ามขึ้น git
+tools/ct-live/proxies.txt
