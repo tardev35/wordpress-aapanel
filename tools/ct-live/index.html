@@ -289,6 +289,7 @@ curl -s "$U/ct/v1/get-entries?start=$((S-5))&end=$((S-1))"</pre>
 
 <script>
 var LOGS=[], rows=[], tab="all", live=false, timer=null, mineOnly=false, mine=[];
+var totalSeen=0;   // นับสะสมทุกใบที่ไหลผ่าน แยกจากบัฟเฟอร์ที่โชว์ (จำกัด 900 กันแรมบวม)
 var $=function(s){return document.querySelector(s)};
 
 // ชื่อโดเมนกดเปิดเว็บได้ ส่วน ⧉ เปิด crt.sh ดูประวัติใบรับรองโดยไม่ต้องแตะเว็บนั้น
@@ -346,7 +347,7 @@ function render(){
     if(mineOnly && !r.mine) return false;
     return true;
   });
-  $("#navCount").textContent=rows.length;
+  $("#navCount").textContent=(totalSeen||rows.length).toLocaleString();
   if(!list.length){
     var why;
     if(!rows.length)      why='ยังไม่มีข้อมูล — กด “เริ่มสตรีม”';
@@ -396,13 +397,15 @@ function drawCov(){
 }
 
 function fetchOnce(){
-  return fetch("/api/entries?n=12").then(function(r){return r.json()}).then(function(nw){
+  // ดึงทีละ 200 ใบ ให้สตรีมไหลจริง (follow mode ฝั่ง server อ่านต่อจากที่ค้างไว้)
+  return fetch("/api/entries?n=200&s=15").then(function(r){return r.json()}).then(function(nw){
     nw.forEach(function(r){
       var d=r.d.toLowerCase().replace(/^\*\./,"");
       r.mine = mine.some(function(m){return d===m || d.endsWith("."+m)});
       r._n=true;
     });
-    rows=nw.concat(rows).slice(0,900);
+    totalSeen += nw.length;                 // สะสมต่อ ไม่ตันที่ 900
+    rows=nw.concat(rows).slice(0,900);      // บัฟเฟอร์โชว์เก็บ 900 ล่าสุดพอ
     drawTabs(); render(); drawCov();
     if(aiAuto && nw.length) pipeline();
   }).catch(function(){});
