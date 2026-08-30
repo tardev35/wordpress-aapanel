@@ -25,3 +25,4 @@ tools/ct-live/vocab.json
 # รายชื่อ proxy มีรหัสผ่าน - ห้ามขึ้น git
 tools/ct-live/proxies.txt
 tools/ct-live/proxies-probe.txt
+tools/ct-live/proxies-webshare.txt

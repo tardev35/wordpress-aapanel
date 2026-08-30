@@ -238,8 +238,9 @@ def _get(url):
     tries = []
     if _probe_px:
         with _px_lock:
-            tries.append(_probe_px[_ppx_i % len(_probe_px)])
-            _ppx_i += 1
+            for _ in range(2):              # พลาดราว 2/10 ครั้ง ลองตัวใหม่ก็ผ่าน
+                tries.append(_probe_px[_ppx_i % len(_probe_px)])
+                _ppx_i += 1
     tries.append(None)                      # ยิงตรงเป็นทางสุดท้ายเสมอ
     last, r = None, None
     for px in tries:
@@ -324,14 +325,21 @@ def probe_many(doms, workers=32):
 
 
 # ---------------------------------------------------------------- proxy pool
-# ใช้กับ RDAP เท่านั้น - ทะเบียนโดเมนจำกัดคำขอต่อ IP หนัก กระจาย 20 IP ถึงจะเช็คได้เยอะ
+# มี 2 ชุด: proxies.txt ใช้กับ RDAP · proxies-probe.txt ใช้เปิดหน้าเว็บ
 #
-# ⚠️ ห้ามใช้กับการเปิดหน้าเว็บ - วัดแล้วด้วย proxy ไทย 20 ตัว 2026-08-30:
-#      เว็บทั่วไป (wikipedia, example.com)  ผ่าน proxy OK   ยิงตรง OK
-#      เว็บพนันไทยที่ใช้งานจริง             ผ่าน proxy ตัด   ยิงตรง OK
-#   อาการเป็น "Tunnel connection failed: 403" หรือ TLS ถูกตัดที่ 5.2 วินาทีเป๊ะ ๆ
-#   ทุกครั้ง ซึ่งเป็นการบล็อกกลางทางระดับ ISP ไทย ไม่ใช่เว็บล่ม
-#   ถ้าเอา proxy ไปใช้กับตัวเปิดเว็บ จะอ่าน <html lang> ของเว็บที่ต้องการดูไม่ได้เลย
+# ⚠️ คุณภาพต่างกันมากระหว่างผู้ให้บริการ วัด 2026-08-30 ด้วย IP ไทยทั้งคู่
+#    จาก ISP ชุดเดียวกัน (3BB, True, AIS, CAT) ยิงเว็บพนันไทยชุดเดียวกัน:
+#
+#      bestproxy  ผ่าน  3/18
+#      webshare   ผ่าน 28/30   (เว็บทั่วไปเป็นตัวควบคุม 20/20)
+#
+#    ตอนแรกสรุปว่า "ISP ไทยบล็อกเว็บพนัน" เพราะเห็น TLS ถูกตัดที่ 5.2 วินาที
+#    เป๊ะ ๆ ทุกครั้ง แต่พอเปลี่ยนผู้ให้บริการแล้วผ่าน แปลว่าตัวที่ตัดคือ
+#    เครือข่ายของ bestproxy เอง ไม่ใช่ ISP ไทย - ข้อสรุปเดิมผิด
+#
+#    บทเรียน: อาการที่ "สม่ำเสมอเกินไป" ชี้ว่ามีคนตั้งใจตัด แต่ไม่ได้บอกว่า
+#    ใครตัด ต้องเปลี่ยนตัวแปรทีละตัวถึงจะรู้ - ที่นี่คือเปลี่ยนผู้ให้บริการ
+#    โดยคุมประเทศและ ISP ไว้เหมือนเดิม
 #
 # ไฟล์ proxies.txt อยู่ใน .gitignore - มีรหัสผ่าน ห้าม commit
 _proxies = []          # ใช้กับ RDAP
@@ -342,17 +350,25 @@ _px_lock = threading.Lock()
 
 
 def load_proxies(name="proxies.txt"):
-    """อ่านไฟล์ proxy รูปแบบ host:port@user:pass บรรทัดละตัว"""
+    """อ่านไฟล์ proxy - รองรับ 2 รูปแบบที่ผู้ให้บริการใช้กัน
+
+        host:port@user:pass     (bestproxy)
+        host:port:user:pass     (webshare)
+    """
     out = []
     f = HERE / name
     if f.exists():
         for line in f.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if not line or line.startswith("#") or "@" not in line:
+            if not line or line.startswith("#"):
                 continue
             try:
-                hp, cred = line.split("@", 1)
-                user, pw = cred.rsplit(":", 1)
+                if "@" in line:
+                    hp, cred = line.split("@", 1)
+                    user, pw = cred.rsplit(":", 1)
+                else:
+                    host, port, user, pw = line.split(":")
+                    hp = "%s:%s" % (host, port)
                 out.append("http://%s:%s@%s" % (
                     urllib.parse.quote(user, safe=""),
                     urllib.parse.quote(pw, safe=""), hp))
