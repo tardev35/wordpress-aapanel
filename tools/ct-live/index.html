@@ -974,6 +974,25 @@ try{ if(window.Notification && Notification.permission==="default") Notification
 loadHits();
 aiDraw();
 
+// อัปเดตหน้าเองทุก 25 วิ — ดึงตัวที่ collector เก็บมาใหม่มาโชว์ + เตือนตัวเพิ่งจด (ไม่ต้อง refresh มือ)
+function pollHits(){
+  fetch("/api/hits").then(function(r){return r.json()}).then(function(res){
+    var have={}; ai.forEach(function(o){have[o.d]=1});
+    var added=[];
+    (res.rows||[]).forEach(function(h){
+      if(!h.d||have[h.d]) return; have[h.d]=1; candSeen[h.d]=1;
+      var pk=h.parked||"", lv=h.live||"";
+      var r={d:h.d, v:h.v||"no", m:h.m||"", w:h.w||"",
+        p:{ok:true, th:pk?false:true, parked:pk, lang:h.lang||"", chars:h.chars||0, title:h.title||"", desc:""},
+        a:{th:h.th||"", days:(h.age_days===null?null:h.age_days), via:h.via||"", err:""},
+        live:(lv==="yes"?true:lv==="no"?false:undefined), _n:false, _notified:false};
+      ai.push(r); added.push(r);
+    });
+    if(added.length){ aiRan=true; aiDraw(); added.forEach(notifyFresh); }
+  }).catch(function(){});
+}
+setInterval(pollHits, 25000);
+
 // คำบรรยายยาว ๆ โชว์เฉพาะบนเครื่องตัวเอง (local) — บนโดเมน/VPS ซ่อนไว้ให้จอโล่ง
 (function(){ var h=location.hostname;
   if(h!=="localhost" && h!=="127.0.0.1" && h!=="::1"){
