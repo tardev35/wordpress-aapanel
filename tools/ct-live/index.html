@@ -227,7 +227,7 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       <div class="card">
         <div class="rows" id="aiRows"><div class="empty">กด “คัดกรองรายการที่ดึงมา”</div></div>
       </div>
-      <p class="sub" style="margin-top:14px;font-size:13px">
+      <p class="sub" id="aiHelp" style="margin-top:14px;font-size:13px">
         โมเดลดูจาก<b>ชื่อโดเมนอย่างเดียว</b> จึงผิดได้ทั้งสองทาง —
         เว็บทั่วไปที่มีตัวเลขอาจถูกทำเครื่องหมาย และเว็บพนันที่ตั้งชื่อธรรมดาจะรอด
         <b>ใช้เป็นตัวช่วยจัดลำดับว่าควรดูตัวไหนก่อน ไม่ใช่คำตัดสิน</b><br><br>
@@ -972,6 +972,13 @@ if($("#aiAuto")) $("#aiAuto").checked=true;
 try{ if(window.Notification && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
 loadHits();
 aiDraw();
+
+// คำบรรยายยาว ๆ โชว์เฉพาะบนเครื่องตัวเอง (local) — บนโดเมน/VPS ซ่อนไว้ให้จอโล่ง
+(function(){ var h=location.hostname;
+  if(h!=="localhost" && h!=="127.0.0.1" && h!=="::1"){
+    var el=$("#aiHelp"); if(el) el.hidden=true;
+  }
+})();
 
 loadLogs();
 </script>
