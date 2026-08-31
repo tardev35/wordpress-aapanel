@@ -973,6 +973,7 @@ if($("#aiAuto")) $("#aiAuto").checked=true;
 try{ if(window.Notification && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
 loadHits();
 aiDraw();
+setLive(true);   // เริ่มสตรีมสดเอง (ไม่ต้องกด) + aiAuto เปิดอยู่ -> คัดกรองวิ่งตามสด
 
 // อัปเดตหน้าเองทุก 25 วิ — ดึงตัวที่ collector เก็บมาใหม่มาโชว์ + เตือนตัวเพิ่งจด (ไม่ต้อง refresh มือ)
 function pollHits(){
