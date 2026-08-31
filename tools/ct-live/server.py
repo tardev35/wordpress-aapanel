@@ -614,10 +614,17 @@ TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", 
           "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
 
 
+def _iso_dt(iso):
+    """parse ISO ให้ทนฟอร์แมต - Python 3.10 fromisoformat เข้มงวด (fractional ต้อง 3/6 หลัก)
+    RDAP บางเจ้าให้ .79 / .0 หลักเดียว จึงตัด fractional ทิ้งก่อน (เราเอาแค่วัน)"""
+    iso = re.sub(r"\.\d+", "", str(iso).replace("Z", "+00:00"))
+    return datetime.fromisoformat(iso)
+
+
 def thai_date(iso):
     """2026-08-12T04:11:22Z -> 12 ส.ค. 2569  (พ.ศ. = ค.ศ. + 543)"""
     try:
-        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        d = _iso_dt(iso)
     except Exception:
         return ""
     return "%d %s %d" % (d.day, TH_MON[d.month], d.year + 543)
@@ -720,28 +727,33 @@ def domain_age(name):
     with _rdap_lock:
         hit = _rdap_cache.get(reg)
     if hit is not None:
-        return dict(hit, d=name)
+        # ได้วันจด = เก็บถาวร · ว่าง (proxy พังชั่วคราว) = เก็บแค่ 30 นาที แล้ว retry ใหม่
+        if hit.get("created") or time.time() - hit.get("_at", 0) < 1800:
+            return dict(hit, d=name)
 
     out = {"d": name, "reg": reg, "created": "", "th": "", "days": None, "err": ""}
     base = srv.get(".".join(reg.split(".")[1:]))
     urls = ([base + "/domain/" + reg] if base else []) + ["https://rdap.org/domain/" + reg]
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for u in urls:
-        try:
-            req = urllib.request.Request(u, headers={"Accept": "application/rdap+json",
-                                                     "User-Agent": BROWSER_UA})
-            with proxy_opener().open(req, timeout=12) as r:
-                d = json.loads(r.read(400000).decode("utf-8", "ignore"))
-        except Exception as ex:
-            out["err"] = type(ex).__name__
-            continue
-        for ev in d.get("events", []):
-            if ev.get("eventAction") in ("registration", "last changed") and not out["created"]:
-                if ev.get("eventAction") == "registration":
+        req = urllib.request.Request(u, headers={"Accept": "application/rdap+json",
+                                                 "User-Agent": BROWSER_UA})
+        for opener in (proxy_opener(), direct):     # proxy ก่อน · พัง/ไม่ใช่ RDAP ค่อยยิงตรง
+            try:
+                with opener.open(req, timeout=12) as r:
+                    d = json.loads(r.read(400000).decode("utf-8", "ignore"))
+            except Exception as ex:
+                out["err"] = type(ex).__name__
+                continue
+            for ev in d.get("events", []):
+                if ev.get("eventAction") == "registration" and not out["created"]:
                     out["created"] = ev.get("eventDate", "")
+            if out["created"]:
+                break
         if out["created"]:
             out["th"] = thai_date(out["created"])
             try:
-                born = datetime.fromisoformat(out["created"].replace("Z", "+00:00"))
+                born = _iso_dt(out["created"])
                 out["days"] = (datetime.now(timezone.utc) - born).days
             except Exception:
                 pass
@@ -757,10 +769,11 @@ def domain_age(name):
             out["created"], out["err"], out["via"] = c, "", "whois"
             out["th"] = thai_date(c)
             try:
-                born = datetime.fromisoformat(c.replace("Z", "+00:00"))
+                born = _iso_dt(c)
                 out["days"] = (datetime.now(timezone.utc) - born).days
             except Exception:
                 pass
+    out["_at"] = time.time()
     with _rdap_lock:
         if len(_rdap_cache) < 20000:
             _rdap_cache[reg] = out
