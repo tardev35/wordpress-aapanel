@@ -1,131 +1,147 @@
-# ct-live — แผน deploy ขึ้น VPS + โดเมน (ล็อก IP ให้เข้าคนเดียว)
+# ct-live — deploy ขึ้น VPS + โดเมน (ล็อก IP + รหัสผ่าน, ไม่ต้อง certbot)
 
-> สถานะ: **แผน** ยังไม่ได้ deploy จริง — ทำตามนี้เมื่อพร้อม
-> ปรัชญา: มีโดเมนสวย ๆ ไว้เข้าเอง แต่ **nginx ล็อก IP** ให้เข้าได้แค่เครื่องคุณ คนอื่น 403
+> ✅ **deploy จริงแล้ว** บน Astro VPS เมื่อ 2026-08-31 — Cloudflare (SSL Flexible) → nginx
+> (realip + ล็อก IP + Basic Auth) → ct-live (systemd, 127.0.0.1:8765)
 
-ct-live เป็น Python **stdlib ล้วน ไม่ต้อง pip อะไรเลย** · bind `127.0.0.1:8765` · เก็บ log ใน SQLite
-เหมาะกับรันบน VPS ตลอด 24 ชม. (เฝ้าสตรีม CT ต่อเนื่อง ไม่ต้องเปิดคอมทิ้ง)
+ct-live เป็น Python **stdlib ล้วน ไม่ต้อง pip** · bind `127.0.0.1:8765` · เก็บ log ใน SQLite
+
+## สถาปัตยกรรม
+
+```
+Browser --HTTPS--> Cloudflare (SSL Flexible) --HTTP--> nginx :80 (origin)
+                                                        ├─ realip: กู้ IP จริงจาก CF-Connecting-IP
+                                                        ├─ ชั้น 1: allow <IP คุณ>; deny all;
+                                                        ├─ ชั้น 2: auth_basic (รหัสผ่าน popup)
+                                                        └─ proxy_pass 127.0.0.1:8765 (systemd)
+```
+**ทำไม Flexible:** ไม่ต้อง certbot — Cloudflare ทำ HTTPS ให้ browser, origin เสิร์ฟ HTTP 80 พอ
+(ปลอดภัยกว่าถ้าใช้ **Cloudflare Origin CA cert** ฟรี 15 ปี → Full(strict) ก็ยังไม่ต้อง certbot)
 
 ---
 
-## 0. ก่อนเริ่ม — เตรียม 3 อย่าง
+## 0. ก่อนเริ่ม
 
-1. **VPS แยกตัวเล็ก ๆ** (1-2 GB พอ) — 🔴 **อย่าใช้เครื่อง WordPress ลูกค้า** โดยเฉพาะถ้าจะต่อ Playwright
-2. **โดเมน/ซับโดเมน** เช่น `ct.example.com` ชี้ A record มาที่ IP VPS
-3. **IP ของคุณ** — `curl -s https://api.ipify.org; echo` (IP บ้าน dynamic เผื่อทั้งวง เช่น `1.2.3.0/24`)
+- **VPS** ที่มี python3 + nginx + systemd (ไม่ต้อง aaPanel) — 🔴 ถ้าจะลง Playwright ควรแยกจากเว็บลูกค้า
+- **ซับโดเมน** เช่น `ct-live.<yourdomain>` — ที่ Cloudflare ตั้ง A record → `VPS_IP`,
+  **orange cloud (proxied)** และ **SSL/TLS = Flexible**
+- **IP ของคุณ** สำหรับ allow — เช็คด้วย:
+  ```bash
+  curl -s https://api.ipify.org; echo            # Git Bash / Linux / mac
+  ```
+  ```powershell
+  curl.exe -s https://api.ipify.org              # Windows PowerShell (curl = alias ต้องใช้ curl.exe)
+  ```
 
 ---
 
-## 1. เอา ct-live ขึ้นเครื่อง + ตั้ง .env
+## 1. ct-live + systemd
 
 ```bash
-# บนเครื่องคุณ
-scp -r tools/ct-live root@VPS_IP:/www/wwwroot/ctlive
-# บน VPS — สร้าง .env (ไม่ commit)
-cat > /www/wwwroot/ctlive/.env <<'ENV'
-OPENROUTER_API_KEY=sk-or-...
-OPENROUTER_MODEL=google/gemini-3.5-flash-lite
-ENV
-chmod 600 /www/wwwroot/ctlive/.env
+scp -r tools/ct-live root@VPS_IP:/opt/ct-live      # .env (key+model) + proxies ไปด้วย
+ssh root@VPS_IP 'rm -rf /opt/ct-live/__pycache__ /opt/ct-live/data/hits.db*;
+  chown -R www-data:www-data /opt/ct-live; chmod 600 /opt/ct-live/.env'
 ```
 
-`data/` (SQLite) จะถูกสร้างเอง · proxy เปิดเว็บใส่ `proxies-probe.txt` ถ้าไม่อยากให้ IP VPS โผล่ไปหาเว็บพนัน
-
----
-
-## 2. systemd — รันตลอด restart เอง
-
 `/etc/systemd/system/ct-live.service`:
-
 ```ini
 [Unit]
 Description=ct-live — CT stream monitor
 After=network-online.target
 Wants=network-online.target
-
 [Service]
 Type=simple
-User=www
-WorkingDirectory=/www/wwwroot/ctlive
+User=www-data
+WorkingDirectory=/opt/ct-live
 ExecStart=/usr/bin/python3 server.py
 Restart=on-failure
 RestartSec=5
-
 [Install]
 WantedBy=multi-user.target
 ```
-
 ```bash
-systemctl daemon-reload
-systemctl enable --now ct-live
-systemctl status ct-live          # ต้องขึ้น active (running)
-curl -s http://127.0.0.1:8765/ | head -c 80   # ต้องได้ HTML
+systemctl daemon-reload && systemctl enable --now ct-live
+sleep 9; systemctl is-active ct-live; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8765/
 ```
-
-server bind `127.0.0.1` อยู่แล้ว → เข้าจากข้างนอกตรง ๆ ไม่ได้ ต้องผ่าน nginx เท่านั้น
 
 ---
 
-## 3. 🔴 nginx: โดเมน + SSL + ล็อก IP (หัวใจของแผนนี้)
+## 2. nginx — realip + ล็อก IP + รหัสผ่าน popup
 
-สร้างไซต์ `ct.example.com` ใน aaPanel ตามปกติ แล้วขอ SSL (Let's Encrypt) จากนั้นแก้ config ของไซต์
-ให้ **proxy ไป 127.0.0.1:8765 + allow เฉพาะ IP คุณ**:
+```bash
+# ก) Cloudflare ranges -> กู้ IP จริง (จำเป็น ไม่งั้น origin เห็นแต่ IP ของ CF)
+{ for ip in $(curl -s https://www.cloudflare.com/ips-v4); do echo "set_real_ip_from $ip;"; done
+  for ip in $(curl -s https://www.cloudflare.com/ips-v6); do echo "set_real_ip_from $ip;"; done
+} > /etc/nginx/cloudflare-realip.conf
 
+# ข) allowlist (แก้เพิ่มด้วย ct-allow.sh ทีหลัง)
+printf 'allow <YOUR_IP>;\nallow 127.0.0.1;\n' > /etc/nginx/ct-live-allow.conf
+
+# ค) รหัส popup (สุ่ม ไม่โชว์) - เปลี่ยนเองด้วย ct-passwd.sh
+echo "admin:$(openssl passwd -apr1 "$(openssl rand -base64 18)")" > /etc/nginx/ct-live.htpasswd
+chmod 640 /etc/nginx/ct-live.htpasswd; chown root:www-data /etc/nginx/ct-live.htpasswd
+```
+
+`/etc/nginx/sites-available/ct-live.<yourdomain>` (แล้ว `ln -s` เข้า `sites-enabled/`):
 ```nginx
-location / {
-    allow 1.2.3.4;          # << IP คุณ (หรือ 1.2.3.0/24)
-    allow 127.0.0.1;
-    deny all;               # คนอื่นทั้งหมด 403
+server {
+    listen 80;
+    server_name ct-live.<yourdomain>;
 
-    proxy_pass http://127.0.0.1:8765;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_read_timeout 120s;    # /api/live, /api/probe ใช้เวลาบ้าง
+    include /etc/nginx/cloudflare-realip.conf;
+    real_ip_header CF-Connecting-IP;
+
+    location / {
+        include /etc/nginx/ct-live-allow.conf;   # ชั้น 1: ล็อก IP
+        deny all;
+        auth_basic "ct-live";                    # ชั้น 2: รหัสผ่าน popup
+        auth_basic_user_file /etc/nginx/ct-live.htpasswd;
+
+        proxy_pass http://127.0.0.1:8765;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 120s;
+    }
 }
 ```
-
 ```bash
-nginx -t && nginx -s reload
+nginx -t && systemctl reload nginx
 ```
-
-> ถ้าไม่ใช้ aaPanel: ทำ server block + certbot เอง หลักการเดียวกัน
+> ล็อก 2 ชั้น (satisfy all): IP ไม่ใช่ของคุณ = 403 (ไม่เจอ popup) · IP ถูกแต่ไม่มีรหัส = 401 (popup) ·
+> ครบทั้งคู่ = เข้าได้ · คนยิงตรง origin ข้าม CF (IP ไม่ใช่ CF) → header ปลอมไม่ถูกเชื่อ → 403
 
 ---
 
-## 4. ยืนยันว่าล็อกได้ผล
+## 3. สคริปต์ช่วย (วางไว้ที่ /root บน VPS)
 
+**`ct-allow.sh`** — จัดการ IP ที่เข้าได้:
 ```bash
-# จากเครื่องคุณ (IP ที่ allow) — ต้องได้ 200
-curl -sk https://ct.example.com/ -o /dev/null -w "%{http_code}\n"
-
-# จากที่อื่น / มือถือปิด wifi (คนละ IP) — ต้องได้ 403
+bash /root/ct-allow.sh 1.2.3.4       # เพิ่ม IP + test + reload ให้เอง
+bash /root/ct-allow.sh --list        # ดู IP ที่ allow อยู่
+bash /root/ct-allow.sh --whoami      # โชว์ IP ปัจจุบันของคุณ (เผื่อ IP เปลี่ยน)
 ```
-
-ได้ **200 จากคุณ + 403 จากคนอื่น** ถึงถือว่าปลอดภัยพอเปิดใช้
+**`ct-passwd.sh`** — ตั้ง/เปลี่ยนรหัส popup (user: `admin`):
+```bash
+bash /root/ct-passwd.sh 'รหัสใหม่ของคุณ'
+```
 
 ---
 
-## 5. (ทางเลือก) เสริมความสามารถ
+## 4. ตั้งค่า Cloudflare + เข้าใช้งาน
 
-### 5a. Playwright — อ่านเว็บ JS ให้แม่นขึ้น
-เว็บ SPA (เช่น london45) HTML ดิบมีข้อความไทยน้อย — Playwright render JS ให้ก่อนอ่าน
-```bash
-pip install playwright && playwright install-deps && playwright install chromium
-```
-🔴 หนัก — เปิดเบราว์เซอร์ต่อ 1 เว็บ · ใช้เฉพาะตัวที่ urllib อ่านไม่ได้ + จำกัด concurrency + ยิงผ่าน proxy
-(ยังไม่ได้ทำในโค้ด — เป็นงานเพิ่มถ้าต้องการ)
-
-### 5b. แจ้งเตือนฝั่ง server (Telegram/อีเมล)
-browser Notification เตือนแค่ตอนเปิดหน้าเว็บค้างไว้ · ถ้าอยากเตือน 24 ชม. จริง
-เพิ่มส่ง Telegram ตอนเจอเว็บพนันไทยเพิ่งจด (ยังไม่ได้ทำ — งานเพิ่ม)
+1. A record `ct-live.<yourdomain>` → `VPS_IP` · **orange cloud** · **SSL/TLS = Flexible**
+2. **ตั้งรหัสของคุณเองก่อน** (ตอน deploy รหัสเป็นสุ่มที่ไม่มีใครรู้):
+   `bash /root/ct-passwd.sh 'รหัสคุณ'`
+3. เปิด `https://ct-live.<yourdomain>` → popup เด้ง → user `admin` + รหัสที่ตั้ง
+4. IP เปลี่ยน (เน็ตบ้าน/VPN) เข้าไม่ได้ → เพิ่ม IP ใหม่: `bash /root/ct-allow.sh <ip>`
 
 ---
 
-## กฎเหล็กก่อนเปิดสาธารณะ
+## กฎเหล็ก / งานเสริม
 
-1. **ล็อก IP หรือใส่ Basic Auth เสมอ** — endpoint `/api/classify`,`/api/live` เผา credit ได้,
-   `/api/probe` เปิด URL อะไรก็ได้ (open-proxy/SSRF) ถ้าเปิดโล่ง
-2. `.env` `chmod 600` — มี API key อยู่ ห้ามหลุด
-3. **แยกเครื่องจาก WordPress ลูกค้า** โดยเฉพาะถ้าใช้ Playwright
-4. ยิง probe **ผ่าน proxy** ไม่ให้ IP VPS โผล่ไปหาเว็บพนันตรง ๆ
+- `.env` `chmod 600` — มี API key
+- ยิง probe **ผ่าน proxy** (มี `proxies-probe.txt` แล้ว) ไม่ให้ IP origin โผล่ไปหาเว็บพนัน
+- 🔴 **อย่าลง Playwright บนเครื่องที่โฮสต์เว็บ static ของคุณ** — หนัก
+- เสริมความแน่น: Cloudflare WAF allow เฉพาะ IP คุณ (ล็อกที่ขอบ) + ufw จำกัด port 80 เฉพาะช่วง CF
+- Flexible = CF↔origin เป็น HTTP — อยากเข้ารหัสช่วงนี้โดยไม่ต้อง certbot ใช้ Cloudflare Origin CA cert
+- แจ้งเตือน 24 ชม.: เพิ่มส่ง Telegram ฝั่ง server (ยังไม่ได้ทำ — งานเพิ่ม)
