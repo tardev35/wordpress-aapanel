@@ -18,6 +18,7 @@ ct-live — ดูสตรีมใบรับรองสดจาก Certifi
 import base64
 import gzip
 import json
+import os
 import re
 import socket
 import sqlite3
@@ -48,6 +49,8 @@ def load_env():
     import os
     cfg = {"key": os.environ.get("OPENROUTER_API_KEY", ""),
            "proxy": os.environ.get("PROXY_URL", ""),
+           "collect": os.environ.get("COLLECTOR", ""),
+           "collect_cycle": os.environ.get("COLLECT_CYCLE", ""),
         "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash-lite")}
     f = HERE / ".env"
     if f.exists():
@@ -61,6 +64,10 @@ def load_env():
                 cfg["key"] = v
             elif k == "OPENROUTER_MODEL":
                 cfg["model"] = v
+            elif k == "COLLECTOR":
+                cfg["collect"] = v
+            elif k == "COLLECT_CYCLE":
+                cfg["collect_cycle"] = v
             elif k in ("PROXY_URL", "HTTPS_PROXY", "HTTP_PROXY") and not cfg["proxy"]:
                 cfg["proxy"] = v
     return cfg
@@ -1201,6 +1208,159 @@ class Handler(BaseHTTPRequestHandler):
                    json.dumps(res, ensure_ascii=False).encode())
 
 
+# ---------------------------------------------------------------- collector (ฝั่ง server)
+# เดิน pipeline เอง (สตรีม -> กรองชื่อ -> probe -> classify -> live -> age -> เก็บ)
+# ไม่ต้องเปิดแท็บ browser — เปิดด้วย COLLECTOR=1 ใน .env (ใช้บน VPS)
+# กรองชื่อ (thScore) พอร์ตจาก index.html ให้เหมือนกัน จะได้ funnel ประหยัด token เท่ากัน
+_RE_TLD = re.compile(r"\.(com|net|org|info|co|io|vip|xyz|club|online|site|live|bet|win|me|"
+                     r"cc|top|pro|asia|biz|shop|fun|app|link|store|games?|casino|th)(\.[a-z]{2})?$")
+_TH_SUF = (r"(vvip|vip|pro|play|club|wins|win|games|game|bets|bet|betting|casino|auto|"
+           r"slots|slot|new|home|hub|max|one|plus|live|member|official|money|rich|lucky|luck|"
+           r"king|gold|asia|online|fun|joy|top|best|real|mex|link|lotto|login|brand|zz)")
+_RE_SUF = re.compile(_TH_SUF + r"[a-z]{0,3}$")
+_RE_ANY = re.compile(_TH_SUF)
+_RE_DSUF = re.compile("-" + _TH_SUF)
+_RE_PRE = re.compile(r"^(play|bet|win|slot|game|casino)-")
+_RE_THN = re.compile(r"(^|[-\d])(th|thai)$|thai")
+_RE_LUCK = re.compile(r"(1688|8888|168|888|889|789|999|989|555|456|678|365|356|369|808|855|"
+                      r"878|868|88|89|98|99|66|77|55|44|33|22|69|36|24|29|123|289|333|444|666|777)")
+_RE_WD = re.compile(r"[a-z]{2,}\d{2,}")
+_RE_DW = re.compile(r"^\d{1,4}[a-z]{2,}")
+_RE_DUP = re.compile(r"([a-z])\1$")
+_RE_TAIL = re.compile(r"[a-z]{3,}[xzkvsr]$")
+_TH_VOCAB = {}
+_TH_MIN = 2.0
+
+
+def _th_core(d):
+    lab = _RE_TLD.sub("", str(d or "").lower().lstrip("*.")).split(".")
+    return lab[-1] if lab else ""
+
+
+def _th_struct(c):
+    flat = c.replace("-", "").replace("_", "")
+    s = 0.0
+    if _RE_THN.search(flat): s += 2.0
+    if _RE_SUF.search(flat): s += 1.5
+    elif _RE_ANY.search(flat): s += 1.0
+    if _RE_DSUF.search(c): s += 0.5
+    if _RE_PRE.search(c): s += 1.5
+    if _RE_LUCK.search(flat): s += 1.5
+    if _RE_WD.search(flat): s += 1.5
+    if _RE_DW.search(flat): s += 0.5
+    if _RE_DUP.search(flat): s += 0.5
+    if _RE_TAIL.search(flat): s += 0.5
+    return s
+
+
+def _th_tokens(d):
+    c = _th_core(d)
+    t = set()
+    for w in re.findall(r"[a-z]{2,12}", c):
+        t.add("w:" + w)
+    for n in re.findall(r"\d{2,4}", c):
+        t.add("n:" + n)
+    p = re.split(r"[-_]", c)
+    t.add("end:" + re.sub(r"\d+$", "", p[-1])[:12])
+    return t
+
+
+def _load_vocab():
+    global _TH_VOCAB, _TH_MIN
+    for name in ("vocab.json", "vocab-generic.json"):
+        f = HERE / name
+        if f.exists():
+            try:
+                v = json.loads(f.read_text(encoding="utf-8"))
+                _TH_VOCAB, _TH_MIN = v.get("vocab", {}), v.get("min", 2.0)
+                return
+            except Exception:
+                pass
+
+
+def th_hint(d):
+    d = str(d or "").lower().lstrip("*.")
+    if RE_THAI.search(d):
+        return True
+    s = _th_struct(_th_core(d))
+    for k in _th_tokens(d):
+        s += _TH_VOCAB.get(k, 0)
+    return s >= _TH_MIN
+
+
+def _collect_process(cands):
+    pr = {}
+    for p in probe_many(cands):
+        pr[p.get("d")] = p
+    cls = [d for d in cands
+           if not pr.get(d, {}).get("err") and (pr[d].get("th") or pr[d].get("parked"))][:60]
+    if not cls:
+        return
+    res = classify(cls)
+    if "error" in res:
+        print("collector classify:", str(res["error"])[:80])
+        return
+    recs, liveitems, ageneed = [], [], []
+    for cr in res.get("rows", []):
+        d = str(cr.get("d", "")).lower().lstrip("*.")
+        if not d:
+            continue
+        v = str(cr.get("v", "no")).lower()
+        v = v if v in ("yes", "maybe", "no") else "no"
+        p = pr.get(d, {})
+        recs.append({"d": d, "v": v, "m": cr.get("m", ""), "w": cr.get("w", ""),
+                     "lang": p.get("lang", ""), "chars": p.get("thai_chars", 0),
+                     "title": p.get("title", ""), "parked": p.get("parked", ""),
+                     "live": "", "th": "", "days": None, "via": ""})
+        if v != "no" and not p.get("parked") and (p.get("title") or p.get("desc")):
+            liveitems.append({"d": d, "title": p.get("title", ""), "desc": p.get("desc", "")})
+        if v != "no":
+            ageneed.append(d)
+    byd = {r["d"]: r for r in recs}
+    if liveitems:
+        lr = live_check(liveitems[:60])
+        if "error" not in lr:
+            for x in lr.get("rows", []):
+                d = str(x.get("d", "")).lower().lstrip("*.")
+                if d in byd:
+                    byd[d]["live"] = "yes" if str(x.get("live", "")).lower() == "yes" else "no"
+    if ageneed:
+        for a in ages_many(ageneed[:60]):
+            d = str(a.get("d", "")).lower().lstrip("*.")
+            if d in byd:
+                byd[d].update(th=a.get("th", ""), days=a.get("days"), via=a.get("via", ""))
+    total = db_add(recs)
+    gamb = sum(1 for r in recs if r["v"] != "no")
+    print("collector: คัด %d เว็บ -> เก็บ %d (พนัน %d) · DB รวม %d"
+          % (len(cls), len(recs), gamb, total))
+
+
+def collector_loop():
+    _load_vocab()
+    cycle = int(os.environ.get("COLLECT_CYCLE") or ENV.get("collect_cycle") or 90)
+    print("collector: เปิด — vocab %d คำ · min %.1f · รอบละ %ds (ไม่ต้องเปิดแท็บ)"
+          % (len(_TH_VOCAB), _TH_MIN, cycle))
+    seen = set()
+    while True:
+        try:
+            rows = sweep(budget=200, seconds=20)
+            cands = []
+            for r in rows:
+                d = str(r.get("d", "")).lower().lstrip("*.")
+                if not d or d in seen:
+                    continue
+                if th_hint(r.get("u") or d):
+                    seen.add(d)
+                    cands.append(d)
+            if len(seen) > 300000:
+                seen = set(list(seen)[-150000:])
+            if cands:
+                _collect_process(cands[:120])
+        except Exception as ex:
+            print("collector loop:", type(ex).__name__, ex)
+        time.sleep(cycle)
+
+
 def main():
     global _proxies
     global _probe_px
@@ -1220,6 +1380,10 @@ def main():
     print(f"\nใช้ได้ {len(lg)} log")
     print(f"\n  เปิดเบราว์เซอร์ที่  ->  http://localhost:{PORT}")
     print("  หยุดด้วย Ctrl-C\n")
+    if (ENV.get("collect") or os.environ.get("COLLECTOR")) == "1":
+        threading.Thread(target=collector_loop, daemon=True).start()
+    else:
+        print("collector: ปิด (ตั้ง COLLECTOR=1 ใน .env ให้ server เก็บข้อมูลเองไม่ต้องเปิดแท็บ)")
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     try:
         srv.serve_forever()

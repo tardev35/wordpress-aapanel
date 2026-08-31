@@ -52,7 +52,7 @@ Wants=network-online.target
 Type=simple
 User=www-data
 WorkingDirectory=/opt/ct-live
-ExecStart=/usr/bin/python3 server.py
+ExecStart=/usr/bin/python3 -u server.py
 Restart=on-failure
 RestartSec=5
 [Install]
@@ -62,6 +62,22 @@ WantedBy=multi-user.target
 systemctl daemon-reload && systemctl enable --now ct-live
 sleep 9; systemctl is-active ct-live; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8765/
 ```
+
+### server-side collector (24/7 ไม่ต้องเปิดแท็บ)
+
+ปกติการคัดกรอง+บันทึกทำที่ browser (เปิดแท็บถึงจะสะสม) — บน VPS เปิด **collector ฝั่ง server**
+ให้เดิน pipeline เอง (สตรีม→กรองชื่อ→probe→classify→live→age→เก็บ) โดยไม่ต้องมี browser:
+```bash
+grep -q '^COLLECTOR=' /opt/ct-live/.env || echo 'COLLECTOR=1' >> /opt/ct-live/.env
+systemctl restart ct-live
+journalctl -u ct-live -f | grep collector    # เห็น "collector: คัด N เว็บ -> เก็บ ..."
+```
+- `-u` (unbuffered) ใน ExecStart จำเป็น ไม่งั้น log collector ไม่โผล่ใน journal
+- `COLLECT_CYCLE=90` (วินาที/รอบ) ปรับได้ใน `.env` — เพิ่มค่าถ้าอยากประหยัด token
+- funnel เดียวกับ browser (กรองชื่อก่อน probe/AI) จึงประหยัดพอกัน · ยิง probe ผ่าน `proxies-probe.txt`
+- 🔴 ใช้ AI ต่อเนื่อง 24 ชม. = มีค่า token — คุมด้วย `COLLECT_CYCLE`
+
+> ✅ collector เปิดอยู่บน Astro VPS แล้ว (2026-08-31) — เก็บข้อมูลเองไม่ต้องเปิดแท็บ
 
 ---
 
