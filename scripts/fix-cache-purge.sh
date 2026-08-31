@@ -25,6 +25,10 @@
 #   ข้อ 3-4 - 60 ไซต์ปิดปลั๊กอินไว้ ใน 60 นั้น 48 ไซต์ไม่มีไฟล์ปลั๊กอินด้วยซ้ำ
 #             (หลายไซต์เปิด litespeed-cache แทน ซึ่งไม่แคชอะไรเลยบนเครื่องที่ใช้ nginx)
 #
+# ต้นแบบปลั๊กอิน: ปกติคัดลอกจากไซต์อื่นในเครื่องที่มีอยู่แล้ว ถ้าไม่มีเลย (เครื่องใหม่ ไซต์แรก
+# ยังไม่มีปลั๊กอิน) จะใช้ตัว bundle ใน configs/nginx-helper/ (nginx-helper 2.3.5) แทน จึงต้อง
+# อัป configs/ ขึ้น /tmp/wpaa/ ด้วยเสมอ — เคยหลุด: garuda369-main.com (118.110) purge พังตั้งแต่จูน
+#
 # ⚠️ ผลข้างเคียงของข้อ 2: ทุกไซต์ใช้โฟลเดอร์แคชร่วมกัน การเปิด open_basedir แปลว่า
 # PHP ของไซต์หนึ่งอ่าน/ลบไฟล์แคชของไซต์อื่นได้ - รับได้เมื่อทุกเว็บเป็นของเจ้าของเดียวกัน
 # ถ้าวันหนึ่งเครื่องนี้ขายพื้นที่ให้คนนอก ต้องกลับมาทบทวนข้อนี้
@@ -33,6 +37,7 @@
 
 set -u
 
+HERE=$(cd "$(dirname "$0")" && pwd)
 BK=/root/wpaa/backups
 PHP=/www/server/php/83/bin/php
 PLUG=nginx-helper/nginx-helper.php
@@ -63,6 +68,13 @@ DONOR=""
 for f in /www/wwwroot/*/wp-content/plugins/nginx-helper/nginx-helper.php; do
   [ -f "$f" ] && { DONOR=$(dirname "$f"); break; }
 done
+# เครื่องใหม่ที่ "ไซต์แรกไม่มีปลั๊กอินเลย" จะไม่มีต้นแบบในเครื่อง -> ใช้ตัว bundle ใน configs/ แทน
+# (เคยหลุด: garuda369-main.com บน 187.127.118.110 มีไซต์เดียวและไม่มีปลั๊กอิน purge เลยพัง)
+if [ -z "$DONOR" ]; then
+  for cand in "$HERE/../configs/nginx-helper" /tmp/wpaa/configs/nginx-helper /root/wpaa/configs/nginx-helper; do
+    [ -f "$cand/nginx-helper.php" ] && { DONOR="$cand"; echo "ต้นแบบปลั๊กอิน: $cand (bundle ใน repo)"; echo; break; }
+  done
+fi
 
 n_path=0; n_ini=0; n_files=0; n_act=0; n_opt=0
 
@@ -132,7 +144,7 @@ for d in /www/wwwroot/*/; do
     chown -R www:www "$d/wp-content/plugins/nginx-helper"
     n_files=$((n_files+1)); msg="$msg file:คัดลอกแล้ว"
   else
-    msg="$msg file:!!ไม่มีต้นแบบให้คัดลอก"
+    msg="$msg file:!!ไม่มีต้นแบบ (อัป configs/ ขึ้นมาด้วย: scp -r configs scripts root@IP:/tmp/wpaa/)"
   fi
 
   # ---------- 4-5. active_plugins + ค่าในฐานข้อมูล ----------
