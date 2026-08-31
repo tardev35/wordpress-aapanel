@@ -9,6 +9,10 @@
 
 ## 3.1 sysctl + BBR
 
+> 🤖 ทำอัตโนมัติได้ด้วย [`scripts/setup-swap-sysctl.sh`](../scripts/setup-swap-sysctl.sh)
+> (swap + sysctl + BBR รวบในตัวเดียว idempotent) — `ssh root@IP "bash -s" < scripts/setup-swap-sysctl.sh`
+> ค่าด้านล่างคือสิ่งที่สคริปต์วางให้ ถ้าอยากทำมือก็ทำตามนี้
+
 ```bash
 # เปิด BBR module
 echo "tcp_bbr" | sudo tee /etc/modules-load.d/bbr.conf

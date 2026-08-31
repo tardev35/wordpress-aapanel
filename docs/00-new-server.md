@@ -111,6 +111,9 @@ cd C:\wordpress-aapanel
 # อัปไฟล์ขึ้นเครื่อง
 scp -r configs scripts root@NEW_IP:/tmp/wpaa/
 
+# 0) swap 4G + sysctl + BBR (แทนการทำมือใน 02 §2.2 / 03 §3.1) - ทำตอนเครื่องยังว่าง
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/setup-swap-sysctl.sh"
+
 # 1) ปิดรู default_server 443 + กฎ www  (ต้องทำก่อนเอาเว็บขึ้น)
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/harden-nginx.sh"
 ssh root@NEW_IP "/etc/init.d/nginx reload"
