@@ -42,7 +42,7 @@
 | 4 | Swap + sysctl + BBR | [02 §2.2](02-hardening.md) · [03 §3.1](03-tuning.md) | 10 นาที |
 | 5 | จูน PHP-FPM + OPcache | [03 §3.2–3.3](03-tuning.md) | 25 นาที |
 | 6 | SSH key + ปิด password + Fail2ban | [02 §2.3–2.4](02-hardening.md) | 15 นาที |
-| **7** | 🔴 **รันชุดสคริปต์ทั้งหมด** — 10 คำสั่งใน [§0.1b](#01b-สรุปคำสั่งทั้งหมด-ก๊อปวางได้) | ดูตารางถัดไป | **10 นาที** |
+| **7** | 🔴 **รันชุดสคริปต์ทั้งหมด** — 11 คำสั่งใน [§0.1b](#01b-สรุปคำสั่งทั้งหมด-ก๊อปวางได้) | ดูตารางถัดไป | **10 นาที** |
 | 8 | ตั้ง cron รอบกลางคืน (**ในหน้า Cron ของ panel**) | [05 §5.1b](05-operations.md) | 3 นาที |
 | 9 | 🔴 **Backup + ทดสอบ restore ให้สำเร็จ 1 ครั้ง** | [05 §5.3](05-operations.md) | 40 นาที |
 | 10 | เว็บแรก | [06](06-new-site.md) (WordPress) · [09](09-static-sites.md) (static) | 10 นาที |
@@ -58,6 +58,7 @@
 | 2 | `apply-cache-config.sh` | FastCGI cache ฉบับโรงงาน — แคช 200 ไว้ **1 วัน** และสั่งเบราว์เซอร์ห้ามแคช ([04](04-cache.md)) |
 | 3 | `set-redis-limit.sh` | Redis ไม่มีเพดาน RAM ([03 §3.5](03-tuning.md)) |
 | 4 | `apply-mysql-config.sh --restart` | MariaDB วิ่งด้วยค่าโรงงาน — buffer pool 1 GB และ `join_buffer_size` จองเปล่า ~1.6 GB ([03 §3.4](03-tuning.md)) |
+| 4c | `install-phpfpm-guard.sh` | 🔴 aaPanel เขียนทับ php-fpm.conf เอง แล้ว max_children เพี้ยน → php-fpm ดับ → **502 ทุกเว็บ** ไม่มีตัวซ่อมเองก็ล่มยาว ([07 ข้อ 3](07-troubleshooting.md)) |
 | 5 | `install-autoheal.sh --no-cron` | ไม่มีตัวซ่อมรอบกลางคืน (ข้อ 8 ต่อจากนี้) |
 | 6 | `install-site-watcher.sh` | 🔴 ไซต์ใหม่เปิด auto-update ค้าง → WordPress อัปตัวเองภายใน 1 ชม. ([05 §5.1c](05-operations.md)) |
 | 7 | `fix-cache-purge.sh` | 🔴 ปุ่ม Purge ในหน้า WP กดแล้วไม่มีอะไรเกิดขึ้น ([04 §4.7](04-cache.md)) |
@@ -132,6 +133,10 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/apply-mysql-config.sh --restart"
 # 4b) จูน PHP-FPM ondemand/35 + php.ini 256M/opcache (03 §3.2-3.3) 🔴 ondemand คือหัวใจ RAM
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/apply-php-config.sh"
 
+# 4c) 🔴 เฝ้า php-fpm ทุก 1 นาที — aaPanel เขียนทับ config เองแล้ว max_children เพี้ยนเป็น
+#     non-number -> php-fpm ดับ -> 502 ทุกเว็บ (เกิดจริง 2026-08-31 โดน 4 เครื่อง ดู 07 ข้อ 3)
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-phpfpm-guard.sh"
+
 # 5) วางไฟล์ถาวรไว้ให้ cron ใช้ (ยังไม่แตะ crontab)
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --no-cron"
 
@@ -200,6 +205,8 @@ ssh root@SERVER_IP "bash -s" < scripts/inventory.sh
 
 ไฟล์ใน [`configs/`](../configs/) คือค่าที่ควรได้ **แก้ผ่าน aaPanel GUI ไม่ใช่ `sed -i`**
 (เคยทำ php-fpm พังจนเว็บล่ม — [07 ข้อ 3](07-troubleshooting.md))
+🔴 แต่ **aaPanel เองก็เขียน php-fpm.conf พังได้** (max_children เพี้ยนเป็น non-number → 502 — เกิดจริง
+2026-08-31 โดน 4 เครื่อง) จึงต้องมี `install-phpfpm-guard.sh` (ข้อ 4c) เป็นตาข่ายซ่อมเองทุก 1 นาที
 
 | ไฟล์ในrepo | เอาไปไว้ไหน | แก้ผ่าน |
 |---|---|---|
