@@ -553,6 +553,7 @@ function aiMatch(r,t){
   if(t==="fresh") return r.v!=="no" && isTh(r) &&                      // จดใหม่: จดไม่นาน / ยังจอดโดเมน
                          ((r.a && r.a.days!==null && r.a.days<=FRESH_DAYS) || isParked(r));
   if(t==="live")  return isLive(r);                                    // ขึ้นเว็บแล้ว: Gemini ยืนยันจาก title
+  if(t==="waiting") return aiMatch(r,"fresh") && !isLive(r);           // รอขึ้น: จดใหม่ที่ยังไม่ขึ้นเว็บ (เฝ้าดู)
   return r.v===t;                                                      // yes / maybe / no
 }
 
@@ -564,15 +565,16 @@ var candQ=[], candSeen={}, candTotal=0;
 function aiDraw(){
   // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
   var box=$("#aiRows"), keepTop=box.scrollTop, keepH=box.scrollHeight;
-  var c={yes:0,maybe:0,no:0,th:0,fresh:0,live:0};
+  var c={yes:0,maybe:0,no:0,th:0,fresh:0,live:0,waiting:0};
   ai.forEach(function(r){
     c[r.v]=(c[r.v]||0)+1;
-    if(aiMatch(r,"th"))    c.th++;
-    if(aiMatch(r,"fresh")) c.fresh++;
-    if(aiMatch(r,"live"))  c.live++;
+    if(aiMatch(r,"th"))      c.th++;
+    if(aiMatch(r,"fresh"))   c.fresh++;
+    if(aiMatch(r,"live"))    c.live++;
+    if(aiMatch(r,"waiting")) c.waiting++;
   });
   $("#navAiC").textContent = aiRan ? c.th : "–";
-  $("#aiTabs").innerHTML=[["th","รวมไทย"],["fresh","จดใหม่"],["live","ขึ้นเว็บแล้ว"],
+  $("#aiTabs").innerHTML=[["th","รวมไทย"],["fresh","จดใหม่"],["waiting","รอขึ้น"],["live","ขึ้นเว็บแล้ว"],
                           ["yes","น่าจะใช่"],["maybe","ไม่แน่ใจ"],["no","ไม่ใช่"],["all","ทั้งหมด"],
                           ["stats","📊 สถิติ"]]
     .map(function(x){
@@ -596,6 +598,8 @@ function aiDraw(){
            "วันจดมาจากปุ่ม “เช็ควันจดโดเมน” — กดเพื่อดึงวันจดเพิ่มก่อน"
        : aiTab==="live" ? "ยังไม่มีตัวไทยที่ <b>ขึ้นเว็บแล้ว</b> (เปิดหน้าได้จริง + เป็นไทย)<br>"+
            "กด “เปิดดูหน้าเว็บจริง” เพื่อตรวจว่าเว็บขึ้นหรือยัง"
+       : aiTab==="waiting" ? "ยังไม่มีตัว <b>จดใหม่ที่รอขึ้นเว็บ</b><br>"+
+           "collector จะเช็คซ้ำให้เองเรื่อย ๆ ว่าตัวจดใหม่ตัวไหนเปลี่ยนจากจอดโดเมนเป็นเปิดเว็บจริง"
        : "ไม่มีรายการในกลุ่มนี้")+'</div>');
     return;
   }
@@ -809,6 +813,16 @@ function notifyFresh(r){
   }
 }
 
+function notifyLive(r){
+  // collector เช็คซ้ำแล้วพบว่า "เว็บจดใหม่ที่เคยรอขึ้น" เปิดเว็บจริงแล้ว - เตือนให้เห็น
+  if(r._liveNotified) return; r._liveNotified=true;
+  var msg=r.d+(r.a&&r.a.days!==null?" (จด "+r.a.days+" วัน)":"");
+  try{ if(window.Notification && Notification.permission==="granted")
+    new Notification("✅ เว็บที่เฝ้าอยู่ขึ้นเว็บแล้ว", {body:msg}); }catch(e){}
+  var b=$("#freshBar");
+  if(b){ b.hidden=false; b.innerHTML="✅ <b>ขึ้นเว็บแล้ว (จากที่เฝ้ารอ):</b> "+esc(r.d); }
+}
+
 // แผงสถิติ (descriptive) - สรุปคำ/เลข/TLD/ปริมาณ/อายุ จากโดเมนใน hits.db
 function drawStats(){
   var box=$("#aiRows");
@@ -825,7 +839,7 @@ function drawStats(){
       }).join("")+'</div>';
     }
     var html='<div class="statshead">สรุปจาก <b>'+(s.total||0).toLocaleString()+
-      '</b> โดเมนที่เก็บไว้ (หมุน 3 วัน) — นับล้วน ๆ ไว้ดูภูมิทัศน์ตลาด</div><div class="statsgrid">';
+      '</b> โดเมนที่เก็บไว้ (หมุน 10 วัน) — นับล้วน ๆ ไว้ดูภูมิทัศน์ตลาด</div><div class="statsgrid">';
     html+=bars("คำ/สัญญาณยอดฮิต", s.words);
     html+=bars("เลขยอดฮิต", s.nums);
     html+=bars("นามสกุล (TLD)", s.tlds);
@@ -906,7 +920,7 @@ function ensureLive(){
   })();
 }
 
-// เก็บ log ลง SQLite ฝั่ง server - รีเฟรชไม่หาย ข้ามเครื่องได้ เก็บหมุน 3 วัน
+// เก็บ log ลง SQLite ฝั่ง server - รีเฟรชไม่หาย ข้ามเครื่องได้ เก็บหมุน 10 วัน
 function saveHits(hits){
   var payload=(hits||[]).filter(function(r){return r&&r.d}).map(function(r){
     return {d:r.d, v:r.v, m:r.m||"", w:r.w||"",
@@ -919,7 +933,7 @@ function saveHits(hits){
   fetch("/api/hit",{method:"POST",headers:{"Content-Type":"application/json"},
                     body:JSON.stringify(payload)}).catch(function(){});
 }
-// กู้ log จาก server ตอนเปิดหน้า - ของที่เจอไว้ 3 วันล่าสุดยังอยู่
+// กู้ log จาก server ตอนเปิดหน้า - ของที่เจอไว้ 10 วันล่าสุดยังอยู่
 function loadHits(){
   fetch("/api/hits").then(function(r){return r.json()}).then(function(res){
     var have={}; ai.forEach(function(o){have[o.d]=1});
@@ -985,18 +999,34 @@ setLive(true);   // เริ่มสตรีมสดเอง (ไม่ต�
 // อัปเดตหน้าเองทุก 25 วิ — ดึงตัวที่ collector เก็บมาใหม่มาโชว์ + เตือนตัวเพิ่งจด (ไม่ต้อง refresh มือ)
 function pollHits(){
   fetch("/api/hits").then(function(r){return r.json()}).then(function(res){
-    var have={}; ai.forEach(function(o){have[o.d]=1});
-    var added=[];
+    var have={}; ai.forEach(function(o){have[o.d]=o});   // เก็บ object ไว้ อัปเดตของเดิมได้
+    var added=[], flipped=[];
     (res.rows||[]).forEach(function(h){
-      if(!h.d||have[h.d]) return; have[h.d]=1; candSeen[h.d]=1;
+      if(!h.d) return;
+      var o=have[h.d];
+      if(o){   // มีอยู่แล้ว - รับผล recheck ฝั่ง server (พลิกเป็นขึ้นเว็บ / เพิ่งรู้วันจด) มาอัปเดต
+        var lv0=h.live||"";
+        if(lv0==="yes" && o.live!==true){                 // recheck พบว่าเปิดเว็บจริงแล้ว -> ย้ายไป "ขึ้นเว็บแล้ว"
+          o.live=true;
+          if(!o.p) o.p={ok:true,th:true,parked:"",lang:h.lang||"",chars:h.chars||0,title:h.title||"",desc:""};
+          else { o.p.ok=true; o.p.parked=""; if(h.title)o.p.title=h.title; if(h.chars)o.p.chars=h.chars; }
+          flipped.push(o);
+        }
+        if((!o.a||o.a.days===null) && h.age_days!==null && h.th)   // recheck เพิ่งได้วันจด (แก้ "ไม่รู้วันจด")
+          o.a={th:h.th||"",days:h.age_days,via:h.via||"",err:""};
+        return;
+      }
+      candSeen[h.d]=1;
       var pk=h.parked||"", lv=h.live||"";
       var r={d:h.d, v:h.v||"no", m:h.m||"", w:h.w||"",
         p:{ok:true, th:pk?false:true, parked:pk, lang:h.lang||"", chars:h.chars||0, title:h.title||"", desc:""},
         a:{th:h.th||"", days:(h.age_days===null?null:h.age_days), via:h.via||"", err:""},
         live:(lv==="yes"?true:lv==="no"?false:undefined), _n:false, _notified:false};
-      ai.push(r); added.push(r);
+      ai.push(r); have[h.d]=r; added.push(r);
     });
-    if(added.length){ aiRan=true; aiDraw(); added.forEach(notifyFresh); }
+    if(added.length||flipped.length){ aiRan=true; aiDraw(); }
+    added.forEach(notifyFresh);
+    flipped.forEach(notifyLive);
   }).catch(function(){});
 }
 setInterval(pollHits, 25000);

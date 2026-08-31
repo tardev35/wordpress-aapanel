@@ -76,8 +76,8 @@ def load_env():
 ENV = load_env()
 
 # ---------------------------------------------------------------- ฐานข้อมูล SQLite
-# เก็บ log เว็บพนันไทยที่เจอ แบบหมุน 3 วัน (วันนี้ + 2 วันก่อน) เกินนั้นลบทิ้ง
-# เช่น วันนี้ 30 ส.ค. -> พอถึง 2 ก.ย. ของวันที่ 30 จะถูกลบ
+# เก็บ log เว็บพนันไทยที่เจอ แบบหมุน 10 วัน เกินนั้นลบทิ้ง
+# (ยืดจาก 3 -> 10 วัน เพื่อมีเวลาเช็คซ้ำว่า "เว็บจดใหม่ที่ยังไม่ขึ้น" ทยอยขึ้นเว็บรึยัง)
 DB_PATH = HERE / "data" / "hits.db"
 _db_lock = threading.Lock()
 
@@ -100,8 +100,8 @@ def _db():
 
 
 def _db_purge(con):
-    # เก็บ 3 วันปฏิทินล่าสุด ลบของที่เก่ากว่านั้น
-    con.execute("DELETE FROM hits WHERE day <= date('now','localtime','-3 days')")
+    # เก็บ 10 วันปฏิทินล่าสุด ลบของที่เก่ากว่านั้น
+    con.execute("DELETE FROM hits WHERE day <= date('now','localtime','-10 days')")
 
 
 # โดเมนต้องหน้าตาเป็นโดเมนจริง (ตัวอักษรโดเมนล้วน + มีจุด) กัน key ขยะลง DB ถาวร
@@ -1359,6 +1359,71 @@ def _collect_process(cands):
           % (len(cls), len(recs), gamb, total))
 
 
+# เช็คซ้ำ "เว็บจดใหม่ที่ยังไม่ขึ้นเว็บ" ว่าตอนนี้เปิดจริงรึยัง (คู่แข่งเพิ่งจดแล้วค่อยทำเว็บ)
+# collector ปกติ "ข้าม" โดเมนที่รู้จักแล้ว -> ถ้าไม่เช็คซ้ำ ตัวที่เคยเป็น parking จะไม่มีวันพลิกเป็น "ขึ้นแล้ว"
+RECHECK_AGE = 30       # เช็คซ้ำเฉพาะโดเมนพนันที่จดใหม่ (อายุ <=30 วัน หรือยังไม่รู้อายุ)
+RECHECK_BATCH = 15     # เช็คซ้ำกี่โดเมนต่อรอบ (สุ่มมาเป็นชุด ๆ วนไปทั่ว watchlist)
+
+
+def _recheck_watchlist(limit=RECHECK_BATCH):
+    with _db_lock:
+        con = _db()
+        _db_purge(con)
+        con.commit()
+        rows = con.execute(
+            "SELECT d, age_days FROM hits "
+            "WHERE v!='no' AND (live IS NULL OR live!='yes') "
+            "AND (age_days IS NULL OR age_days <= ?) "
+            "ORDER BY RANDOM() LIMIT ?", (RECHECK_AGE, limit)).fetchall()
+        con.close()
+    doms = [r[0] for r in rows]
+    if not doms:
+        return
+    age_unknown = [r[0] for r in rows if r[1] is None]
+    pr = {p.get("d"): p for p in probe_many(doms)}
+    # ตัวที่เปิดหน้าได้ + มี title/desc -> ให้ Gemini อ่านว่าเปิดจริงรึยัง (เหมือน _collect_process)
+    liveitems = [{"d": d, "title": pr[d].get("title", ""), "desc": pr[d].get("desc", "")}
+                 for d in doms
+                 if not pr.get(d, {}).get("err") and not pr[d].get("parked")
+                 and (pr[d].get("title") or pr[d].get("desc"))]
+    livemap = {}
+    if liveitems:
+        lr = live_check(liveitems[:60])
+        if "error" not in lr:
+            for x in lr.get("rows", []):
+                dd = str(x.get("d", "")).lower().lstrip("*.")
+                livemap[dd] = "yes" if str(x.get("live", "")).lower() == "yes" else "no"
+    agemap = {}
+    if age_unknown:                       # เผื่อเติมวันจดที่ RDAP เคยล้มเหลว ("ไม่รู้วันจด")
+        for a in ages_many(age_unknown[:40]):
+            dd = str(a.get("d", "")).lower().lstrip("*.")
+            agemap[dd] = a
+    flipped = 0
+    with _db_lock:
+        con = _db()
+        for d in doms:
+            p, sets, vals = pr.get(d, {}), [], []
+            if p and not p.get("err"):    # เจอผล probe ใหม่ -> อัปเดต title/chars/parked
+                sets += ["title=?", "chars=?", "parked=?"]
+                vals += [_clip(p.get("title"), 300), _to_int(p.get("thai_chars")) or 0,
+                         _clip(p.get("parked"), 40)]
+            if d in livemap:
+                sets.append("live=?")
+                vals.append(livemap[d])
+                if livemap[d] == "yes":
+                    flipped += 1
+            a = agemap.get(d)
+            if a and a.get("days") is not None:
+                sets += ["th=?", "age_days=?", "via=?"]
+                vals += [_clip(a.get("th"), 40), _to_int(a.get("days")), _clip(a.get("via"), 40)]
+            if sets:
+                vals.append(d)
+                con.execute("UPDATE hits SET " + ",".join(sets) + " WHERE d=?", vals)
+        con.commit()
+        con.close()
+    print("collector recheck: เช็คซ้ำ %d ตัว · ขึ้นเว็บใหม่ %d" % (len(doms), flipped))
+
+
 def collector_loop():
     _load_vocab()
     cycle = int(os.environ.get("COLLECT_CYCLE") or ENV.get("collect_cycle") or 90)
@@ -1388,6 +1453,7 @@ def collector_loop():
                 seen = set(list(seen)[-150000:])
             if cands:
                 _collect_process(cands[:120])
+            _recheck_watchlist()          # ทุกรอบ: สุ่มเช็คซ้ำ watchlist ว่าตัวไหนขึ้นเว็บแล้ว
         except Exception as ex:
             print("collector loop:", type(ex).__name__, ex)
         time.sleep(cycle)
