@@ -129,6 +129,9 @@ ssh root@NEW_IP "bash /tmp/wpaa/scripts/set-redis-limit.sh"
 #    ตอนมีเว็บลูกค้าแล้วต้องนัดเวลา และ panel เขียนทับ my.cnf ได้เรื่อย ๆ
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/apply-mysql-config.sh --restart"
 
+# 4b) จูน PHP-FPM ondemand/35 + php.ini 256M/opcache (03 §3.2-3.3) 🔴 ondemand คือหัวใจ RAM
+ssh root@NEW_IP "bash /tmp/wpaa/scripts/apply-php-config.sh"
+
 # 5) วางไฟล์ถาวรไว้ให้ cron ใช้ (ยังไม่แตะ crontab)
 ssh root@NEW_IP "bash /tmp/wpaa/scripts/install-autoheal.sh --no-cron"
 
