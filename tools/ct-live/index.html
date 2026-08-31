@@ -87,7 +87,11 @@ input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 /* ---- ตาราง ---- */
 .card{background:var(--panel);border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;overflow:hidden}
 .rows{max-height:min(62vh,640px);overflow:auto}
-body.hosted .rows{max-height:calc(100vh - 235px)}   /* บนโดเมน (ซ่อนคำบรรยาย) ให้ลิสต์สูงเต็มจอ */
+/* บนโดเมน (ซ่อนคำบรรยาย) ให้ลิสต์ยืดเต็มพื้นที่ด้วย flexbox */
+body.hosted main{display:flex;flex-direction:column;min-height:100vh}
+body.hosted .page.on{display:flex;flex-direction:column;flex:1;min-height:0}
+body.hosted .card{flex:1;min-height:0;display:flex;flex-direction:column}
+body.hosted .rows{max-height:none;flex:1;min-height:0}
 .row{display:grid;grid-template-columns:76px 128px 1fr 130px;gap:12px;align-items:baseline;
   padding:6px 16px;font-family:"IBM Plex Mono",monospace;font-size:12.8px;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
