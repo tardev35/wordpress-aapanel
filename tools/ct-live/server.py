@@ -1341,6 +1341,12 @@ def collector_loop():
     print("collector: เปิด — vocab %d คำ · min %.1f · รอบละ %ds (ไม่ต้องเปิดแท็บ)"
           % (len(_TH_VOCAB), _TH_MIN, cycle))
     seen = set()
+    try:                       # โหลดโดเมนที่มีใน DB แล้วเข้า seen - ไม่ probe/AI ซ้ำของเดิม
+        for h in db_recent(50000):
+            seen.add(str(h.get("d", "")).lower().lstrip("*."))
+        print("collector: รู้จักจาก DB แล้ว %d โดเมน (จะไม่ทำซ้ำ)" % len(seen))
+    except Exception:
+        pass
     while True:
         try:
             rows = sweep(budget=200, seconds=20)

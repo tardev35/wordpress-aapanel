@@ -920,6 +920,7 @@ function loadHits(){
     var have={}; ai.forEach(function(o){have[o.d]=1});
     (res.rows||[]).forEach(function(h){
       if(!h.d||have[h.d]) return; have[h.d]=1;
+      candSeen[h.d]=1;   // รู้จักจาก DB แล้ว - กันสตรีมคิวมา probe/classify/เตือนซ้ำ
       // ของที่ยังจอดโดเมน: หน้าไม่ใช่เว็บจริง จึง th=false (ให้ isTh ตกไปใช้ชื่อ/โมเดล)
       var pk=h.parked||"", lv=h.live||"";
       ai.push({d:h.d, v:h.v||"no", m:h.m||"", w:h.w||"",
