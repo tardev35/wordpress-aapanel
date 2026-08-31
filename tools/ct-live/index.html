@@ -963,6 +963,8 @@ fetch("/api/ai-status").then(function(r){return r.json()}).then(function(s){
     $("#aiWarn").innerHTML="<b>ยังไม่ได้ตั้งคีย์</b> — ใส่ <span class='mono'>OPENROUTER_API_KEY</span> "+
       "ในไฟล์ <span class='mono'>tools/ct-live/.env</span> แล้วรัน server ใหม่"; }
   else { $("#aiTxt").textContent="พร้อม · "+s.model; }
+  if(s.collector && $("#aiTxt"))   // server มี collector เก็บ 24/7 คู่กัน - browser ยังคัดเอง (aiAuto on)
+    $("#aiTxt").textContent += " · collector เก็บ 24/7";
 });
 
 // โดเมนของเราเอง - แก้รายชื่อตรงนี้ได้ หรือปล่อยว่างถ้าไม่ต้องใช้

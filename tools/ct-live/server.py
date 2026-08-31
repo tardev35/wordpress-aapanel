@@ -832,11 +832,20 @@ _yield = {}          # log นี้ให้กี่ใบต่อคำข�
 PAR_RANGES = 8       # ยิงกี่ช่วงพร้อมกันต่อ log
 
 
-def pull(log, budget=200, deadline=None):
+def pull(log, budget=200, deadline=None, cursor=None, seen=None, seen_order=None):
     """ไล่อ่าน entry ต่อจากที่ค้างไว้ ไม่เกิน budget ใบ และไม่เกินเวลาที่กำหนด
 
     เพดานเวลาสำคัญกว่าเพดานจำนวน - log ที่ให้ทีละ 9 ใบจะลากรอบยาวมาก
-    ถ้าไม่ตัด หน้าเว็บจะค้างรอ log ที่ช้าที่สุดเสมอ"""
+    ถ้าไม่ตัด หน้าเว็บจะค้างรอ log ที่ช้าที่สุดเสมอ
+
+    cursor/seen แยกได้ - browser (จาก /api/entries) กับ collector อ่านคนละ cursor
+    จะได้ไม่แย่งกัน (ต่างคนต่างเห็นสตรีมเต็ม)"""
+    if cursor is None:
+        cursor = _cursor
+    if seen is None:
+        seen = _seen
+    if seen_order is None:
+        seen_order = _seen_order
     lid = log["id"]
     try:
         sth = http_json(log["url"] + "/ct/v1/get-sth", timeout=12)
@@ -847,7 +856,7 @@ def pull(log, budget=200, deadline=None):
         return []
 
     with _cur_lock:
-        cur = _cursor.get(lid)
+        cur = cursor.get(lid)
         if cur is None or cur > size:
             cur = max(0, size - budget)          # รอบแรกเริ่มใกล้ปลาย
         st = _stat.setdefault(lid, {"got": 0, "grew": 0, "last_size": size})
@@ -898,12 +907,12 @@ def pull(log, budget=200, deadline=None):
             if not r:
                 continue
             key = (r["d"], r["t"])
-            if key in _seen:
+            if key in seen:
                 continue
-            _seen.add(key)
-            _seen_order.append(key)
-            if len(_seen_order) > 20000:
-                _seen.discard(_seen_order.pop(0))
+            seen.add(key)
+            seen_order.append(key)
+            if len(seen_order) > 20000:
+                seen.discard(seen_order.pop(0))
             r["log"] = log["op"]
             r["id"] = lid
             rows.append(r)
@@ -911,19 +920,19 @@ def pull(log, budget=200, deadline=None):
         got += advanced
 
     with _cur_lock:
-        _cursor[lid] = cur
+        cursor[lid] = cur
         _stat[lid]["got"] += got
         _stat[lid]["behind"] = max(0, size - cur)
     return rows
 
 
-def sweep(budget=200, seconds=20):
+def sweep(budget=200, seconds=20, cursor=None, seen=None, seen_order=None):
     rows = []
     lock = threading.Lock()
     deadline = time.time() + seconds
 
     def worker(lg):
-        got = pull(lg, budget, deadline)
+        got = pull(lg, budget, deadline, cursor, seen, seen_order)
         with lock:
             rows.extend(got)
 
@@ -1160,7 +1169,8 @@ class Handler(BaseHTTPRequestHandler):
 
         elif self.path == "/api/ai-status":
             self._send(200, "application/json; charset=utf-8", json.dumps({
-                "ready": bool(ENV["key"]), "model": ENV["model"]}).encode())
+                "ready": bool(ENV["key"]), "model": ENV["model"],
+                "collector": (ENV.get("collect") or os.environ.get("COLLECTOR")) == "1"}).encode())
         else:
             self._send(404, "text/plain; charset=utf-8", b"not found")
 
@@ -1341,6 +1351,8 @@ def collector_loop():
     print("collector: เปิด — vocab %d คำ · min %.1f · รอบละ %ds (ไม่ต้องเปิดแท็บ)"
           % (len(_TH_VOCAB), _TH_MIN, cycle))
     seen = set()
+    # cursor/seen แยกของ collector - ไม่แย่งกับ browser (/api/entries) ต่างคนต่างเห็นสตรีมเต็ม
+    c_cursor, c_seen, c_seen_order = {}, set(), []
     try:                       # โหลดโดเมนที่มีใน DB แล้วเข้า seen - ไม่ probe/AI ซ้ำของเดิม
         for h in db_recent(50000):
             seen.add(str(h.get("d", "")).lower().lstrip("*."))
@@ -1349,7 +1361,7 @@ def collector_loop():
         pass
     while True:
         try:
-            rows = sweep(budget=200, seconds=20)
+            rows = sweep(200, 20, c_cursor, c_seen, c_seen_order)
             cands = []
             for r in rows:
                 d = str(r.get("d", "")).lower().lstrip("*.")
