@@ -83,6 +83,24 @@ input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .tab:hover{color:var(--ink);border-color:var(--line)}
 .tab.on{color:var(--amber);border-bottom-color:var(--amber);font-weight:600}
 .tab .c{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);margin-left:6px}
+/* เมนูซ้าย กรองตามนามสกุลโดเมน (TLD) */
+.ai-body{display:flex;gap:12px;align-items:flex-start}
+.ai-body .card{flex:1;min-width:0}
+.tldbar{flex:0 0 128px;display:flex;flex-direction:column;gap:4px;padding-top:8px}
+.tldhead{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;padding:0 4px 3px}
+.tldlist{display:flex;flex-direction:column;gap:3px}
+.tld{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;
+  padding:7px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+  color:var(--dim);font-size:13px;cursor:pointer;font-family:inherit;text-align:left}
+.tld:hover{color:var(--ink);border-color:var(--faint)}
+.tld.on{background:var(--amber-soft);color:var(--amber);border-color:var(--amber);font-weight:600}
+.tld .k{font-family:"IBM Plex Mono",monospace}
+.tld .c{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint)}
+.tld.on .c{color:var(--amber)}
+body.hosted .ai-body{flex:1;min-height:0}
+body.hosted .ai-body .card{flex:1;min-height:0}
+body.hosted .tldbar{align-self:stretch}
+@media(max-width:640px){.ai-body{flex-direction:column}.tldbar{flex:none;flex-direction:row;flex-wrap:wrap;padding-top:0}.tldhead{display:none}.tldlist{flex-direction:row;flex-wrap:wrap}}
 
 /* ---- ตาราง ---- */
 .card{background:var(--panel);border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;overflow:hidden}
@@ -230,8 +248,14 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;paddi
       </div>
 
       <div class="tabs" id="aiTabs"></div>
-      <div class="card">
-        <div class="rows" id="aiRows"><div class="empty">กด “คัดกรองรายการที่ดึงมา”</div></div>
+      <div class="ai-body">
+        <div class="tldbar" id="tldWrap">
+          <div class="tldhead">นามสกุล</div>
+          <div class="tldlist" id="tldBar"></div>
+        </div>
+        <div class="card">
+          <div class="rows" id="aiRows"><div class="empty">กด “คัดกรองรายการที่ดึงมา”</div></div>
+        </div>
       </div>
       <p class="sub" id="aiHelp" style="margin-top:14px;font-size:13px">
         โมเดลดูจาก<b>ชื่อโดเมนอย่างเดียว</b> จึงผิดได้ทั้งสองทาง —
@@ -563,6 +587,16 @@ var ai=[], aiTab="th", aiAuto=false, aiBusy=false, aiRan=false, probed={}, aiNot
 // คิวโดเมนที่ "ชื่อเข้าเค้า" รอคัดกรอง — สะสมจากทั้งสตรีม ไม่ใช่แค่บัฟเฟอร์ 900 บนจอ
 var candQ=[], candSeen={}, candTotal=0;
 
+// เมนูซ้าย: กรองตามนามสกุลโดเมน (TLD) — อัปเดต realtime พร้อมรายการ ("" = ทั้งหมด)
+var tldFilter="";
+var TLD_LIST=["com","net","org","online","bet","co"];
+function domTld(d){ var p=String(d||"").toLowerCase().replace(/\.+$/,"").split("."); return p.length>1?p[p.length-1]:""; }
+function tldMatch(r){
+  if(!tldFilter) return true;
+  var t=domTld(r.d);
+  return tldFilter==="other" ? TLD_LIST.indexOf(t)===-1 : t===tldFilter;
+}
+
 function aiDraw(){
   // ผลใหม่แทรกด้านบน ถ้าไม่ยึดไว้ แถวที่กำลังอ่านจะไหลหายไปทุกครั้งที่อัปเดต
   var box=$("#aiRows"), keepTop=box.scrollTop, keepH=box.scrollHeight;
@@ -586,9 +620,30 @@ function aiDraw(){
     b.addEventListener("click",function(){aiTab=b.dataset.a;aiDraw();
       if(aiTab==="live") ensureLive();});   // เปิดแท็บนี้ = ให้ Gemini อ่าน title ยืนยันว่าขึ้นจริง
   });
-  if(aiTab==="stats"){ drawStats(); return; }   // แท็บสถิติ - แสดงสรุปแทนรายการ
-  var list=ai.filter(function(r){return aiMatch(r,aiTab)});
+  var tldEl=$("#tldBar"), tldWrap=$("#tldWrap");
+  if(aiTab==="stats"){ if(tldWrap) tldWrap.hidden=true; drawStats(); return; }  // สถิติ - ซ่อนเมนู TLD
+  if(tldWrap) tldWrap.hidden=false;
+  var tabList=ai.filter(function(r){return aiMatch(r,aiTab)});
+  // เมนูซ้าย: นับจำนวนต่อ TLD จากชุดของแท็บนี้ (อัปเดต realtime ทุกครั้งที่ aiDraw)
+  var tc={other:0}; TLD_LIST.forEach(function(t){tc[t]=0;});
+  tabList.forEach(function(r){ var t=domTld(r.d); if(TLD_LIST.indexOf(t)>=0) tc[t]++; else tc.other++; });
+  if(tldEl){
+    tldEl.innerHTML=[["","ทั้งหมด"],["com",".com"],["net",".net"],["org",".org"],
+                     ["online",".online"],["bet",".bet"],["co",".co"],["other","อื่น ๆ"]]
+      .map(function(x){ var n=x[0]===""?tabList.length:(x[0]==="other"?tc.other:tc[x[0]]);
+        return '<button class="tld'+(tldFilter===x[0]?" on":"")+'" data-t="'+x[0]+'">'+
+               '<span class="k">'+x[1]+'</span><span class="c">'+n+'</span></button>'; }).join("");
+    tldEl.querySelectorAll(".tld").forEach(function(b){
+      b.addEventListener("click",function(){ tldFilter=b.dataset.t; aiDraw(); }); });
+  }
+  var list=tabList.filter(tldMatch);
   if(!list.length){
+    if(tldFilter && tabList.length){   // แท็บนี้มีของ แต่ TLD ที่เลือกไม่มี
+      aiRows(box, keepTop, keepH, '<div class="empty">ไม่มีโดเมน <b>'+
+        (tldFilter==="other"?"นามสกุลอื่น":"."+tldFilter)+'</b> ในกลุ่มนี้ ('+tabList.length+' ตัว)<br>'+
+        'กด “ทั้งหมด” ที่เมนูซ้ายเพื่อดูทุกนามสกุล</div>');
+      return;
+    }
     aiRows(box, keepTop, keepH, '<div class="empty">'+
       (!ai.length ? (aiNote ? aiNote
                      : aiRan ? "คัดกรองแล้ว ไม่พบโดเมนที่เข้าข่ายในรอบนี้"
