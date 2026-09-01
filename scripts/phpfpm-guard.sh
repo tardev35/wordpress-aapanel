@@ -20,13 +20,14 @@ for PHPV in 83 84 82 81 74; do
   BIN=/www/server/php/$PHPV/sbin/php-fpm
   [ -f "$F" ] && [ -x "$BIN" ] || continue
   alive(){ pgrep -f "php/$PHPV/etc/php-fpm.conf" >/dev/null 2>&1; }
+  wait_alive(){ for _ in 1 2 3 4 5 6; do alive && return 0; sleep 1; done; return 1; }  # master ขึ้นช้าได้ ~ไม่กี่วิ
 
   if "$BIN" -t -y "$F" >/dev/null 2>&1; then
     # config ผ่าน - เหลือเช็คแค่ว่า master ยังอยู่ไหม (ondemand: ต้องเห็น master เสมอ)
     if ! alive; then
-      /etc/init.d/php-fpm-$PHPV start >/dev/null 2>&1; sleep 1
-      alive && { say "php-fpm-$PHPV: master หายทั้งที่ config ดี -> start คืนแล้ว"; fixed=1; } \
-             || say "🔴 php-fpm-$PHPV: master หาย + start ไม่ขึ้น - ต้องดูมือ"
+      /etc/init.d/php-fpm-$PHPV start >/dev/null 2>&1
+      wait_alive && { say "php-fpm-$PHPV: master หายทั้งที่ config ดี -> start คืนแล้ว"; fixed=1; } \
+                 || say "🔴 php-fpm-$PHPV: master หาย + start ไม่ขึ้น - ต้องดูมือ"
     fi
     continue
   fi
@@ -46,9 +47,9 @@ for PHPV in 83 84 82 81 74; do
     say "php-fpm-$PHPV: ไฟล์ config ถูกเขียนพัง (max_children) - ซ่อมไฟล์แล้ว master ยังรัน ไม่ restart"
     fixed=1
   else
-    /etc/init.d/php-fpm-$PHPV restart >/dev/null 2>&1; sleep 1
-    alive && { say "php-fpm-$PHPV: config พัง+master ดับ -> ซ่อม+restart คืนแล้ว ($(grep -m1 '^pm.max_children' "$F"))"; fixed=1; } \
-           || say "🔴 php-fpm-$PHPV: ซ่อม config แล้วแต่ start ไม่ขึ้น - ต้องดูมือ"
+    /etc/init.d/php-fpm-$PHPV restart >/dev/null 2>&1
+    wait_alive && { say "php-fpm-$PHPV: config พัง+master ดับ -> ซ่อม+restart คืนแล้ว ($(grep -m1 '^pm.max_children' "$F"))"; fixed=1; } \
+               || say "🔴 php-fpm-$PHPV: ซ่อม config แล้วแต่ start ไม่ขึ้น - ต้องดูมือ"
   fi
 done
 
