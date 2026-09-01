@@ -125,6 +125,22 @@ ssh root@SERVER_IP "/root/stamp-site.sh DOMAIN.TLD"
 คำสั่งข้างบนเก็บไว้สำหรับ 2 กรณี: เครื่องที่ยังไม่ได้ตั้ง watcher และตอนไล่แก้ปัญหาเฉพาะหน้า
 ตรวจว่าเครื่องนี้ตั้งแล้วหรือยังด้วย `systemctl status wpaa-newsite.path`
 
+### 👉 รหัส admin หลังลง batch มัก "ไม่ตรงที่ตั้ง" — sync ด้วย `set-wp-admin.sh`
+
+aaPanel one-key เก็บ user/pass ที่ตั้งใจไว้ในตาราง `wordpress_onekey` แต่ตอน install รหัสที่มี
+**อักขระพิเศษ (`+ = & %`) มัก escape เพี้ยน** รหัส admin จริงในเว็บเลยไม่ตรงกับที่กรอกในฟอร์ม
+ต้องมานั่งรีเซ็ตทีละเว็บ เสียเวลา — รันตัวนี้ครั้งเดียวจบทุกเว็บหลังลง batch:
+
+```bash
+ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-admin.sh --check"    # ดูว่าเว็บไหนรหัสเพี้ยน (ไม่แก้)
+ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-admin.sh"            # ตั้งให้ตรงกับที่ panel เก็บ (onekey)
+ssh root@SERVER_IP "bash /root/wpaa/scripts/set-wp-admin.sh --pass 'รหัสเดียวทุกเว็บ'"
+```
+
+มันอ่านรหัสที่ "ตั้งใจ" จาก `wordpress_onekey` (จับคู่ด้วย `table_prefix` ของแต่ละเว็บ) แล้วบังคับ
+รหัส admin จริงให้ตรงด้วย `wp_set_password()` ของ WordPress เอง — hash ถูกทุกเวอร์ชัน
+เช็คก่อน ตรงอยู่แล้วไม่แตะ แก้เฉพาะตัวที่เพี้ยน · `--check` = ดูอย่างเดียว
+
 ---
 
 ## 6.1c แคช — สิ่งที่ต้องรู้ตอนทำเว็บเสร็จ
