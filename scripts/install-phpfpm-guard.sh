@@ -22,11 +22,13 @@ SCRIPT="$ROOT/scripts/phpfpm-guard.sh"
 UNIT=wpaa-phpfpm-guard
 SVC=/etc/systemd/system/$UNIT.service
 TMR=/etc/systemd/system/$UNIT.timer
+PTH=/etc/systemd/system/$UNIT.path
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
 if [ "${1:-}" = "--remove" ]; then
+  systemctl disable --now "$UNIT.path" 2>/dev/null || true
   systemctl disable --now "$UNIT.timer" 2>/dev/null || true
-  rm -f "$SVC" "$TMR"
+  rm -f "$SVC" "$TMR" "$PTH"
   systemctl daemon-reload
   echo "ถอด $UNIT ออกแล้ว (ไฟล์สคริปต์ยังอยู่)"
   exit 0
@@ -66,15 +68,30 @@ Unit=$UNIT.service
 [Install]
 WantedBy=timers.target
 EOF
+# path unit: จุดชนวน guard **ทันที** ที่ php-fpm.conf ถูกเขียน (aaPanel ลงเว็บแรก/ปรับ PHP)
+# -> ซ่อมไฟล์ก่อน reload จะฆ่า php-fpm = ไม่มีช่วง 502 เลย (ไม่ต้องรอ timer)
+{
+  echo "[Unit]"
+  echo "Description=wpaa - ตื่นทันทีเมื่อ php-fpm.conf ถูกเขียน (ซ่อมก่อนกลายเป็น 502)"
+  echo ""
+  echo "[Path]"
+  for f in /www/server/php/*/etc/php-fpm.conf; do [ -f "$f" ] && echo "PathModified=$f"; done
+  echo "Unit=$UNIT.service"
+  echo ""
+  echo "[Install]"
+  echo "WantedBy=paths.target"
+} > "$PTH"
 echo "  $SVC"
 echo "  $TMR"
+echo "  $PTH  ($(grep -c PathModified "$PTH") ไฟล์ที่เฝ้า)"
 
-echo "== 3. เปิดใช้ + รันทันที 1 รอบ =="
+echo "== 3. เปิดใช้ (timer + path) + รันทันที 1 รอบ =="
 systemctl daemon-reload
 systemctl enable --now "$UNIT.timer"
+systemctl enable --now "$UNIT.path"
 systemctl start "$UNIT.service"
 
 echo
 systemctl list-timers "$UNIT.timer" --no-pager | head -3
-echo
+echo "path: $(systemctl is-active "$UNIT.path")  (จุดชนวนทันทีเมื่อ config ถูกแตะ)"
 echo "log: /var/log/wpaa-phpfpm-guard.log (เขียนเฉพาะรอบที่ต้องซ่อมจริง)"
