@@ -157,7 +157,22 @@ if [ -x "$MYCFG" ]; then
   fi
 fi
 
-# ---------- 8. ตัด log ไม่ให้โต ----------
+# ---------- 8. กฎกันแฮ็ก WP (harden-wp) ----------
+# ลง WP เว็บแรก/เพิ่มเว็บ = ไซต์ใหม่ยังไม่มีกฎกันแฮ็ก (xmlrpc/uploads/wp-includes/wp-config/login)
+# และเครื่องที่ provision ตกขั้นนี้ก็จะไม่มีเลย - รอบกลางคืนติดตั้ง/เติม symlink ให้เองถ้ายังไม่ครบ
+# harden-wp.sh ทำ nginx -t + reload + rollback ในตัว จึงเรียกเฉพาะตอน --check บอกว่ายังไม่ครบ
+if [ -x "$ROOT/scripts/harden-wp.sh" ]; then
+  chk=$("$ROOT/scripts/harden-wp.sh" --check 2>&1)
+  if echo "$chk" | grep -qE "ยังไม่|ยังขาด ([1-9]|[1-9][0-9]+) ไซต์"; then
+    if "$ROOT/scripts/harden-wp.sh" >/dev/null 2>&1; then
+      log "[แก้] harden-wp ยังไม่ครบ - ติดตั้ง/เติมกฎกันแฮ็กให้ทุกไซต์แล้ว"
+    else
+      log "[ล้มเหลว] harden-wp ไม่ผ่าน nginx -t - ต้องดูมือ"
+    fi
+  fi
+fi
+
+# ---------- 9. ตัด log ไม่ให้โต ----------
 if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt "$LOG_KEEP" ]; then
   tail -n "$LOG_KEEP" "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
